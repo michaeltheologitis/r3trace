@@ -8,13 +8,13 @@ This is the whole surface most callers need::
     print(result)                 # the answer text
     result.relevant_context              # what each document was found to contribute
     result.structured_context            # the structured parse the answer was computed over
-    result.provenance             # the snippets, parses, documents, quotes, trail and claims behind it
+    result.provenance             # the summaries, parses, documents, quotes, trail and claims behind it
     result.schema_code            # the schema proposed for this question
 
-The answer cites its two views separately: the relevance snippets it used
+The answer cites its two views separately: the relevance summaries it used
 (``result.provenance["summary_ids"]``) and the documents whose parsed records it used
-(``result.provenance["parse_ids"]``). Each document's relevance snippet and its parse
-also record the snippets they used (``result.relevance_provenance``,
+(``result.provenance["parse_ids"]``). Each document's relevance summary and its parse
+also record the summaries they used (``result.relevance_provenance``,
 ``result.parsing_provenance``). ``result.provenance["trail"]`` is what the answer
 reaches through those citations, ``result.provenance["documents"]`` the documents on
 that trail, each with its name, ``result.provenance["quotes"]`` the sentences
@@ -126,7 +126,7 @@ def run(
             that reads the parse with code. A direct run takes the coding path when its
             prompt does not fit the model's window.
         evidence_level: overrides the config's: ``"sentence"`` has each relevance
-            snippet quote the sentences of its document it is based on;
+            summary quote the sentences of its document it is based on;
             ``"document"`` asks for no quotes, so ``result.provenance["quotes"]`` is
             empty and ``result.provenance["documents"]`` names the documents the
             trail ends at.
@@ -147,7 +147,7 @@ def run(
             once per request and leaves any resending to it.
         logs_dir: where the run folder goes. Defaults to ``./logs``
             (or ``R3CON_LOGS_DIR``).
-        save_artifacts: write the per-stage artifacts — the relevance snippets, the
+        save_artifacts: write the per-stage artifacts — the relevance summaries, the
             proposed schema, the parse, the reasoning transcript — into a run folder.
             On by default: they are how you see what the run actually did. Set ``False``
             to run without touching the filesystem.
@@ -177,10 +177,10 @@ def run(
 
     Returns:
         An :class:`~r3con.pipeline.Answer`: the answer text (``.answer``, and
-        ``str()`` of the result), the ids of the relevance snippets and parsed records
+        ``str()`` of the result), the ids of the relevance summaries and parsed records
         it used, its trail and the documents and quotes on it, and its claims, each
         with what supports it (``.provenance``: ids
-        from ``.document_ids``, a part's snippet as ``<id>.<k>``, whose document is the
+        from ``.document_ids``, a part's summary as ``<id>.<k>``, whose document is the
         part before the dot, each document and each quote with the document's name;
         see :attr:`~r3con.pipeline.Answer.provenance`), each document's name
         (``.document_names``), the relevant context
@@ -273,7 +273,7 @@ def ask(
 ) -> Answer:
     """Answer a new ``question`` over what a finished run built, running only reasoning.
 
-    The run's relevance snippets, schema and parse are reused as its folder holds them,
+    The run's relevance summaries, schema and parse are reused as its folder holds them,
     so an ask costs one reasoning step rather than a run. Reasoning is sent what the
     run's was, with ``question`` in place of the run's question. Its prompts are the
     run's pins, resolved as a run resolves them (a ``./prompts`` overlay in the working
@@ -311,7 +311,7 @@ def ask(
 
     Returns:
         An :class:`Answer` whose ``answer`` and ``provenance`` come from the new
-        reasoning (its trail, documents and quotes through the run's snippets of
+        reasoning (its trail, documents and quotes through the run's summaries of
         every round and its parses), its claims found as a run finds them unless
         the run's config turns them off, as a run's made before claims does, and
         whose other fields are the run's;
@@ -365,7 +365,7 @@ def resume(
 
     A stage that finished is taken as its ``result.json`` holds it, its files left as
     they are. An unfinished one reuses each document's result the run saved in
-    ``events.jsonl`` (each relevance snippet a round wrote, all its parts there, and
+    ``events.jsonl`` (each relevance summary a round wrote, all its parts there, and
     each parse) and computes the rest, as the run would have, under its question,
     config and document ids; reasoning and claims always run. The folder keeps one
     record of the
@@ -444,7 +444,7 @@ def trace(source: Answer | str | Path, rule: str = DEFAULT_RULE) -> AnswerProven
     Args:
         source: an :class:`Answer` from :func:`run` or :func:`ask`, whose ``run_dir``
             is read, or the path of a run folder or of an ask's folder: an ask's answer
-            is its own, and its snippets and parses those of the run it asked over.
+            is its own, and its summaries and parses those of the run it asked over.
         rule: the name of a rule in :data:`r3con.provenance.RULES`. Under the default,
             the provenance is the one the answer was saved with.
 

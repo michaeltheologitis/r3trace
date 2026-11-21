@@ -220,7 +220,7 @@ reasoning step.
 #### Provenance
 
 `result.provenance["documents"]` lists the documents behind the relevance
-snippets the answer cites, directly or through the parsed records it cites,
+summaries the answer cites, directly or through the parsed records it cites,
 each with its `document` ID and `name`.
 
 `result.provenance["quotes"]` lists the sentences the answer is based on.
@@ -266,7 +266,7 @@ The examples use five short memos, with the information spread across them
 so no single document contains the complete answer:
 
 - [`examples/quickstart.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/quickstart.ipynb) — a complete example of using R3Con.
-- [`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/provenance.ipynb) — checking the original sentences, snippets, and records behind an answer.
+- [`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/provenance.ipynb) — checking the original sentences, summaries, and records behind an answer.
 - [`examples/options.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/options.ipynb) — configuring models, relevance rounds, reasoning, generation settings, custom connections, and saved files.
 - [`examples/vllm.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/vllm.ipynb) — using an AI model hosted on your own vLLM server.
 

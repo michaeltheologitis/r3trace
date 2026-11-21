@@ -6,7 +6,7 @@
     r3con app
 
 Everything the pipeline did is left in a run folder under ``./logs`` — the relevance
-snippets, the proposed schema, the parse, and the reasoning transcript — because the
+summaries, the proposed schema, the parse, and the reasoning transcript — because the
 answer alone rarely tells you whether to trust it.
 
 ``r3con resume`` carries on a run that failed or was stopped, in its folder, over the
@@ -162,7 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
         choices=REASONING_PATHS,
         default=None,
         help="Override how reasoning answers (direct = one call over the relevance "
-        "snippets and the whole parse; coding = an agent that reads the parse with "
+        "summaries and the whole parse; coding = an agent that reads the parse with "
         "code, which a direct run also uses when its prompt does not fit the model's "
         "window).",
     )
@@ -170,7 +170,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--evidence-level",
         choices=EVIDENCE_LEVELS,
         default=None,
-        help="Override what relevance records as evidence (sentence = each snippet "
+        help="Override what relevance records as evidence (sentence = each summary "
         "with the sentences it is based on, quoted; document = no quotes, so the "
         "answer's provenance lists only its documents).",
     )

@@ -3,9 +3,9 @@
 Wires the three moves of the method — see :mod:`r3con.stages`:
 
 1. **surfacing relevance** (:mod:`r3con.stages.relevance`) — each document gets a
-   task-conditioned **relevance snippet**, rebuilt over ``relevance_rounds`` synchronous
+   task-conditioned **relevance summary**, rebuilt over ``relevance_rounds`` synchronous
    rounds; from round 2 on, each document is re-read in light of the *other* documents'
-   previous snippets, but those it prunes
+   previous summaries, but those it prunes
    (:attr:`~r3con.stages.relevance.RelevantContext.pruned`). The collection of them is
    the **relevant context**, and it is what every later stage reads
    (:attr:`~r3con.stages.relevance.RelevantContext.context_round`).
@@ -17,7 +17,7 @@ Wires the three moves of the method — see :mod:`r3con.stages`:
 3. **reasoning** (:mod:`r3con.stages.reasoning`) — answer over the merged parse and
    the relevant context: in one completion (``reasoning: direct``), or in a multi-turn
    sandboxed Python loop (``reasoning: coding``, and a direct run whose prompt does not
-   fit the model's window). The answer cites the snippets it used, and the documents
+   fit the model's window). The answer cites the summaries it used, and the documents
    whose parsed records it used, by id.
 
 After reasoning, one more call finds the answer's **claims**, each with the evidence on
@@ -240,7 +240,7 @@ class Skip:
     - ``stage`` — :data:`RELEVANCE_STAGE` or :data:`PARSING_STAGE`.
     - ``round`` — the relevance round, from 1; ``None`` for parsing.
     - ``doc_id``, ``doc_name`` — the document's id and name.
-    - ``part`` — the ``k`` of the part's snippet id ``<id>.<k>``, or ``None`` for a
+    - ``part`` — the ``k`` of the part's summary id ``<id>.<k>``, or ``None`` for a
       document read whole (:func:`~r3con.stages.relevance.part_number`).
     - ``reason`` — why, as :class:`~r3con.runtime.llm.UnusableReply` gives it.
     - ``call`` — the call's kind, as its stage's ``calls.json`` records it
@@ -272,17 +272,17 @@ class Answer:
 
     - ``answer`` — the answer text.
     - ``provenance`` — what the answer used (:class:`~r3con.provenance.Provenance`).
-      ``provenance["summary_ids"]`` lists the ids of the relevance snippets of
+      ``provenance["summary_ids"]`` lists the ids of the relevance summaries of
       ``relevant_context`` it used (``<id>.<k>`` for part ``k`` of a document read in
       parts). ``provenance["parse_ids"]`` lists those of the documents whose records
       in ``structured_context`` it used (an id can be in both).
       ``provenance["trail"]`` is the answer's trail under the default rule
-      (:class:`~r3con.provenance.Trail`): the snippets and parses it cites, the
-      snippets they cite, round by round back, and the documents those snippets
+      (:class:`~r3con.provenance.Trail`): the summaries and parses it cites, the
+      summaries they cite, round by round back, and the documents those summaries
       summarize. ``provenance["documents"]`` lists the documents the trail reaches,
       in document order, each by id and by name
       (:class:`~r3con.provenance.NamedDocument`). ``provenance["quotes"]`` lists the
-      sentences behind the answer, those the trail's snippets are based on, each
+      sentences behind the answer, those the trail's summaries are based on, each
       naming its document by id and by name (:class:`~r3con.provenance.NamedQuote`);
       a document-level run (``evidence_level="document"``) has none.
       ``provenance["claims"]`` lists the claims the answer makes, each one of its
@@ -293,7 +293,7 @@ class Answer:
       (:class:`~r3con.provenance.Claim`). It is empty when the config turns claims
       off, or when their call finds none (:func:`~r3con.stages.claims.find_claims`).
       :func:`r3con.trace` builds it again from the run folder, under any rule.
-    - ``relevant_context`` — the **relevant context**: the relevance snippet of each
+    - ``relevant_context`` — the **relevant context**: the relevance summary of each
       document in the round of
       :attr:`~r3con.stages.relevance.RelevantContext.context_round`, aligned 1:1 with
       the ``documents`` you passed in
@@ -323,13 +323,13 @@ class Answer:
       ``documents[int(name)]`` is the document), as for a run folder written before
       names were recorded; recorded in the run folder's ``names.json``.
     - ``relevance_provenance`` — for each document, aligned 1:1 with
-      ``relevant_context``, the ids of the previous round's relevance snippets its
-      snippet there used (for a note kept from an earlier round in place of a skipped
+      ``relevant_context``, the ids of the previous round's relevance summaries its
+      summary there used (for a note kept from an earlier round in place of a skipped
       one, the round before that one's): each a document's id, or ``<id>.<k>`` for
       part ``k`` of a document read in parts in that previous round. A document read in parts has its
       parts' ids combined, in order, without repeats.
     - ``parsing_provenance`` — for each document, aligned 1:1 with ``documents``, the
-      ids of the snippets of ``relevant_context`` its parse used, its own document's
+      ids of the summaries of ``relevant_context`` its parse used, its own document's
       among them when it helped: each a document's id, or ``<id>.<k>`` for part ``k``
       of a document read in parts in that round, combined across a document's parts
       as in ``relevance_provenance``; none for a document relevance pruned, which is
@@ -581,12 +581,12 @@ def run_pipeline(
       (``None`` without one).
     - ``relevance_started``, before a document is read in a round: ``round``,
       ``doc_id``. ``relevance_finished``, once it is read, for each part it ended up
-      read in: ``round``, ``doc_id``, ``part`` (``k`` of the part's snippet id
-      ``<id>.<k>``, ``None`` for a document read whole), the snippet's ``summary``, its
-      ``quotes`` as the snippet record holds them, the ids of the previous round's
-      snippets it used, ``provenance``, and ``skipped``: ``None``, or, for a note
-      skipped, why (as :attr:`Skip.reason`), its fields then empty. A part refused as
-      too long and cut further is no event.
+      read in: ``round``, ``doc_id``, ``part`` (``k`` of the part's summary id
+      ``<id>.<k>``, ``None`` for a document read whole), its ``summary``, its ``quotes``
+      as its record holds them, the ids of the previous round's summaries it used,
+      ``provenance``, and ``skipped``: ``None``, or, for a note skipped, why (as
+      :attr:`Skip.reason`), its fields then empty. A part refused as too long and cut
+      further is no event.
     - ``documents_pruned``, once a round from 2 on that prunes is in: ``round``, and
       ``doc_ids``, the documents relevance pruned after it
       (:attr:`~r3con.stages.relevance.RelevantContext.pruned`), in document order,
@@ -600,7 +600,7 @@ def run_pipeline(
     - ``parsing_started`` / ``parsing_finished``, around each document's parse:
       ``doc_id``; finished adds ``n_records``, the document's ``parse`` as JSON
       (each field of ``Parse`` and its records, a document read in parts with its
-      parts' records in order), the ids of the relevance snippets the parse used,
+      parts' records in order), the ids of the relevance summaries the parse used,
       ``provenance``, and ``skipped``, each of its parts whose parse was skipped, as
       ``{part, reason}`` (``part`` as in ``relevance_finished``, ``reason`` as
       :attr:`Skip.reason`), none when none was.
@@ -803,7 +803,7 @@ def _build_and_answer(
             _log.info(
                 "every document was pruned, so nothing relevant is left in the end: "
                 "no schema is proposed, nothing is parsed, and reasoning answers from "
-                "round 1's snippets"
+                "round 1's summaries"
             )
         else:
             emit("schema_started")
@@ -1226,7 +1226,7 @@ def _read_saved(
 
     A finished stage's results are its ``result.json``'s. An unfinished one's come from
     ``events.jsonl`` (:func:`r3con.runs.read_events`), each event checked as it is read
-    and the last one written for a result winning: a document's snippet in a round when
+    and the last one written for a result winning: a document's summary in a round when
     the events hold each of its parts, as many as that round read it in, and only while
     every earlier round's are all there (:func:`_saved_snippets`); a parse when the
     schema finished and the parse fits it. What the run pruned is what it recorded: a
@@ -1236,7 +1236,7 @@ def _read_saved(
     its ``result.json``, an unfinished relevance's ``documents_pruned`` among them; a
     finished one's pruning is replayed from its ``result.json`` (:func:`_pruning_of`).
     The lines and results it skips, which the resume computes again, are counted in one
-    warning. Each quote of a snippet it reuses has its ``document_text`` from ``texts``
+    warning. Each quote of a summary it reuses has its ``document_text`` from ``texts``
     (:func:`_with_document_text`). A note or parse the run skipped as its reply stayed
     unusable is a result like any other, reused as it was saved, so it is not read
     again and stays skipped.
@@ -1364,7 +1364,7 @@ class _DocumentEvent(BaseModel):
 
 
 class _Quote(BaseModel):
-    """A snippet's quote, as a ``relevance_finished`` event gives it."""
+    """A summary's quote, as a ``relevance_finished`` event gives it."""
 
     text: str
     start: StrictInt | None
@@ -1422,7 +1422,7 @@ def _validated(
 
 
 class _SavedRounds(NamedTuple):
-    """What :func:`_saved_snippets` finds: the snippets; each document pruned after a
+    """What :func:`_saved_snippets` finds: the summaries; each document pruned after a
     round up to ``recorded_through``, mapped to that round, and the positions of the
     events that recorded them; and how many it leaves out."""
 
@@ -1440,13 +1440,13 @@ def _saved_snippets(
     rounds: int,
     splits: Splits,
 ) -> _SavedRounds:
-    """Each document's snippet in each round that ``events`` hold whole, by round and
+    """Each document's summary in each round that ``events`` hold whole, by round and
     document index, its quotes' ``document_text`` from ``texts``
     (:func:`_with_document_text`), with the positions of the events that reported its
     parts: each of the parts that round read it in, as ``splits`` records them; and
-    kept only while every earlier round's snippets are all there, since a round reads
+    kept only while every earlier round's summaries are all there, since a round reads
     the one before, and only when written after them. Also how many of those events or
-    snippets it leaves out.
+    summaries it leaves out.
 
     Once a round from 2 on is whole, the documents the run pruned after it are those the
     first ``documents_pruned`` of that round written after it names, none without one
@@ -1469,7 +1469,7 @@ def _saved_snippets(
                 _with_document_text(records, texts[doc]),
                 [at for at, _ in reported],
             )
-    # A round's snippets hold only while the round before is whole, and only those
+    # A round's summaries hold only while the round before is whole, and only those
     # written after it: an earlier attempt's were read over a round since redone.
     kept: dict[tuple[int, int], tuple[list[SnippetRecord], list[int]]] = {}
     latest = -1
@@ -1522,7 +1522,7 @@ def _pruning_events(
 
 
 def _snippet(id_: str, event: _SnippetEvent) -> SnippetRecord:
-    """The snippet ``event`` reports, as its document's part ``id_``."""
+    """The summary ``event`` reports, as its document's part ``id_``."""
     quotes = [Quote(**q.model_dump()) for q in event.quotes]
     return SnippetRecord(
         id=id_,
@@ -1637,7 +1637,7 @@ def read_representation(run_dir: Path) -> Representation:
 
 
 def _cites_all(built: Representation) -> Citations:
-    """Citations of every snippet of the relevant context an answer over ``built`` can
+    """Citations of every summary of the relevant context an answer over ``built`` can
     cite, and of every document's parse: whatever an answer cites, its trail reaches no
     further than theirs."""
     document_ids = list(built.names)
@@ -1659,7 +1659,7 @@ def _provenance_over(built: Representation, citations: Citations) -> Provenance:
 
 def read_answer(folder: Path, rule: str) -> AnswerProvenance:
     """The provenance of the answer saved in the run folder or ask's folder ``folder``,
-    its trail walked under ``rule``, built from its citations and the snippets and
+    its trail walked under ``rule``, built from its citations and the summaries and
     parses' citations of the run it answered over, with the claims ``folder`` saved,
     none for a folder saved without them: only what :func:`r3con.trace` needs, so
     neither the run's config nor its prompts are read.
@@ -1769,7 +1769,7 @@ def _run_config(manifest: Mapping[str, Any]) -> RunConfig:
 
 
 def _names_and_relevance(run_dir: Path) -> tuple[dict[str, str], RelevantContext]:
-    """Each document's name by its id, in document order, and every round's snippets,
+    """Each document's name by its id, in document order, and every round's summaries,
     as ``run_dir`` holds them."""
     ids: dict[str, int] = _read_json(run_dir / "ids.json")
     result = _read_json(run_dir / "relevance" / "result.json")
@@ -1787,9 +1787,9 @@ def _names(run_dir: Path, ids: Mapping[str, int]) -> dict[str, str]:
 
 def _relevance(result: Mapping[str, Any], ids: dict[str, int]) -> RelevantContext:
     """What relevance's ``result.json``, ``result``, holds: every round, each document's
-    snippets in a list, one per part, a snippet without quotes, as r3context 0.6.4 wrote
-    one, quoting nothing; and the documents it pruned, each with its round, none for a
-    run that recorded them otherwise or not at all."""
+    summaries in a list, one per part, a summary without quotes, as r3context 0.6.4
+    wrote one, quoting nothing; and the documents it pruned, each with its round, none
+    for a run that recorded them otherwise or not at all."""
     records: list[list[list[SnippetRecord]]] = []
     for round_ in result["rounds"]:
         per_document: list[list[SnippetRecord]] = [[] for _ in ids]

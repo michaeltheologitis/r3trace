@@ -77,7 +77,7 @@ const ASK_QUOTED = {
   title: [1, 'quoted by\n02_eastfield · round 1 (cited by 04_contractor_registry · round 2)'],
 };
 const POPUP_ROWS = {
-  'doc-0': ['relevance snippet'],
+  'doc-0': ['relevance summary'],
   'r1-0': ['read'],
   'r2-3': ['read'],
   schema: ['reasoning'],
@@ -134,9 +134,9 @@ const LARGE_RUN_COUNTS = { nodes: 162, edges: 3440 };
 const ROW_GAP = 112;
 const SIMULATED_LABEL = 'simulated — not connected to R3Con yet';
 // A simulated run's note, from the page's SUMMARY_CHARS.
-const SIMULATED_NOTE = "simulated · each relevance snippet is the file's first 140 characters, and the citations are made up";
-// A relevance round's line for a document with a snippet.
-const SNIPPET_READY = 'snippet ready';
+const SIMULATED_NOTE = "simulated · each relevance summary is the file's first 140 characters, and the citations are made up";
+// A relevance round's line for a document with a summary.
+const SNIPPET_READY = 'summary ready';
 // A parsed document's line, and the popup of one with nothing in its parse.
 const STRUCTURE_READY = 'structure ready';
 const NOTHING_PARSED = 'nothing parsed';
@@ -648,7 +648,7 @@ function recordedSample() {
   return match ? JSON.parse(match[1]) : null;
 }
 
-// The index of the sample's document that r3con's snippet or document id `id` names.
+// The index of the sample's document that r3con's summary or document id `id` names.
 const docIndexIn = (sample, id) => sample.ids.indexOf(id.split('.')[0]);
 
 // Each sample memo's name without its suffix, as the page labels it.
@@ -1839,8 +1839,8 @@ async function folders() {
     const lettersAt = (await folderId(page, 'letters')).slice('doc-'.length);
     const labelled = { head: await linesOf(page, folderSel('letters')), ...(await stackLinesOf(page, lettersAt)), fold: await linesOf(page, '#world .node.fold.r1') };
     const quietFiles = ARCHIVE[1].length;
-    const stacked = { head: ['letters', '5 docs · 2 sources'], r1: ['5 snippets', 'round 1'], r2: ['5 snippets', 'round 2'], parsed: ['5 structures'], fold: [`${quietFiles} snippets`, 'round 1'] };
-    const stackName = "a closed folder's node says its name over its docs and sources; once the run is done its round nodes count a snippet for each of its files, over their round, and its parse node a structure for each; a fold of files with nothing relevant counts all of its files too";
+    const stacked = { head: ['letters', '5 docs · 2 sources'], r1: ['5 summaries', 'round 1'], r2: ['5 summaries', 'round 2'], parsed: ['5 structures'], fold: [`${quietFiles} summaries`, 'round 1'] };
+    const stackName = "a closed folder's node says its name over its docs and sources; once the run is done its round nodes count a summary for each of its files, over their round, and its parse node a structure for each; a fold of files with nothing relevant counts all of its files too";
     check('folders', stackName, isDeepStrictEqual(labelled, stacked), JSON.stringify(labelled));
 
     await pressNode(page, folderSel('q3'));
@@ -1859,7 +1859,7 @@ async function folders() {
     const inside = await page.$$eval('#world .node', (els) => els.map((el) => el.dataset.id).filter((id) => /^(r\d|parsed)-[0-4]$/.test(id)));
     const one = new Set(stand.lines.map((key) => key.split('>').map((end) => end.split('-')[0]).join('>'))).size === stand.lines.length;
     const standName = 'a closed folder stands in for its files in every column, one node a column, with one line between columns for all of them, lit along the trail through it';
-    // The simulated answer cites some of its files' snippets and parses, and its trail goes on to the snippets' files.
+    // The simulated answer cites some of its files' summaries and parses, and its trail goes on to the summaries' files.
     const [doc, parsed, , r2] = columns;
     const litThrough = isDeepStrictEqual(stand.onPath, [doc, parsed, r2]) && isDeepStrictEqual(stand.lit, [`${doc}>${r2}`, `${parsed}>answer-0`, `${r2}>answer-0`]);
     check('folders', standName, isDeepStrictEqual(stand.nodes, columns) && inside.length === 0 && one && stand.lines.length >= 3 && litThrough, JSON.stringify({ stand, inside }));
@@ -1944,11 +1944,11 @@ async function folders() {
     await pressNode(page, folderSel('other'));
     const redrawn = await page.evaluate(standIns, id);
     const [r1, r2] = ['r1', 'r2'].map((kind) => `${kind}-${id.slice('doc-'.length)}`);
-    const name = "a closed folder's lines stay as the run drew them once the panel folds again, among them a line from its one relevant file's snippet to the next round in it";
+    const name = "a closed folder's lines stay as the run drew them once the panel folds again, among them a line from its one relevant file's summary to the next round in it";
     check('folders', name, drawn.lines.includes(`${r1}>${r2}`) && isDeepStrictEqual(redrawn, drawn), JSON.stringify({ drawn, redrawn }));
     const counts = await stackLinesOf(page, id.slice('doc-'.length));
-    const countsName = "a closed folder of one note and two empty files counts all three once the run is done, empty or not: three snippets a round, three structures";
-    check('folders', countsName, isDeepStrictEqual(counts, { r1: ['3 snippets', 'round 1'], r2: ['3 snippets', 'round 2'], parsed: ['3 structures'] }), JSON.stringify(counts));
+    const countsName = "a closed folder of one note and two empty files counts all three once the run is done, empty or not: three summaries a round, three structures";
+    check('folders', countsName, isDeepStrictEqual(counts, { r1: ['3 summaries', 'round 1'], r2: ['3 summaries', 'round 2'], parsed: ['3 structures'] }), JSON.stringify(counts));
   });
 
   await withPage('folders', { sample: false }, async (page) => {
@@ -2229,7 +2229,7 @@ async function chatLog() {
     check('chat log', openName, opened.open && isDeepStrictEqual(stepsOf(opened), REPLAY_STEPS), JSON.stringify(stepsOf(opened)));
     const roundLines = opened.steps.slice(1, 1 + ROUNDS).flatMap(({ nested }) => nested).sort();
     const settled = sample.rounds.flatMap((summaries) => summaries.map(({ summary }, i) => `${stem(i)} — ${summary ? SNIPPET_READY : 'nothing relevant'}`)).sort();
-    check('chat log', "each round's line says its document's snippet is ready, or that nothing was relevant", isDeepStrictEqual(roundLines, settled), roundLines[0]);
+    check('chat log', "each round's line says its document's summary is ready, or that nothing was relevant", isDeepStrictEqual(roundLines, settled), roundLines[0]);
     const parseLines = parsedLines(opened);
     const filled = sample.parsed.map(({ parse }, i) => `${stem(i)} — ${Object.keys(filledFields(parse)).length ? STRUCTURE_READY : NOTHING_PARSED}`).sort();
     check('chat log', "each parsed document's line says its structure is ready, or that nothing was parsed", isDeepStrictEqual(parseLines, filled), parseLines.join(' | '));
@@ -2281,7 +2281,7 @@ async function chatLog() {
     const flags = simulated.after.filter((text) => text.startsWith('simulated'));
     const flagged = !simulated.open && flags.length === 2 && simulated.mark === 'flag' && simulated.folded === `ready · ${DEFAULT_MODEL} · nothing was sent`;
     check('chat log', "400 dark: a simulated run's two warnings stay in view with its log folded, which says nothing was sent", flagged, flags.join(' | '));
-    check('chat log', "a simulated run's note says each relevance snippet is the file's start and the citations are made up", flags[0] === SIMULATED_NOTE, flags[0]);
+    check('chat log', "a simulated run's note says each relevance summary is the file's start and the citations are made up", flags[0] === SIMULATED_NOTE, flags[0]);
     const target = await rect(page, '.log-toggle');
     const fits = target.width >= MIN_TARGET_PX && target.height >= MIN_TARGET_PX && (await page.evaluate(noHorizontalScroll));
     check('chat log', `400 dark: the chevron is a ${MIN_TARGET_PX}px target, and the page has no horizontal scroll`, fits, `${target.width}×${target.height}`);
@@ -3444,8 +3444,8 @@ async function popupArea() {
     }
     const sample = recordedSample();
     const roundNames = (await page.$$eval('.node.r1, .node.r2', (els) => els.map((el) => el.getAttribute('aria-label')))).sort();
-    const snippetNames = [1, 2].flatMap((round) => sample.docs.map((_, i) => `${stem(i)}, round ${round} relevance snippet`)).sort();
-    check('popup', "each round's node is named for its document and its relevance snippet", isDeepStrictEqual(roundNames, snippetNames), roundNames[0]);
+    const snippetNames = [1, 2].flatMap((round) => sample.docs.map((_, i) => `${stem(i)}, round ${round} relevance summary`)).sort();
+    check('popup', "each round's node is named for its document and its relevance summary", isDeepStrictEqual(roundNames, snippetNames), roundNames[0]);
     await inspect(page, 'schema');
     const schema = { label: await page.textContent(`${nodeSel('schema')} .label`), title: (await popup(page))?.title, name: await page.getAttribute(nodeSel('schema'), 'aria-label') };
     check('popup', "the proposed schema's node and popup are called schema", isDeepStrictEqual(schema, { label: 'schema', title: '● schema', name: 'schema, proposed schema' }), JSON.stringify(schema));
@@ -6997,7 +6997,7 @@ async function liveFolderPruned(url) {
     const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
     const counts = await stackLinesOf(page, (await folderId(page, 'pruned')).slice('doc-'.length), [...roundKinds(MAX_ROUNDS), 'parsed']);
     const files = memos.length;
-    const expected = { r1: [`${files} snippets`, 'round 1'], r2: [`${files} snippets`, 'round 2'], r3: [`${files - 1} snippets`, 'round 3'], r4: [`${files - 2} snippets`, 'round 4'], parsed: [`${files - 2} structures`] };
+    const expected = { r1: [`${files} summaries`, 'round 1'], r2: [`${files} summaries`, 'round 2'], r3: [`${files - 1} summaries`, 'round 3'], r4: [`${files - 2} summaries`, 'round 4'], parsed: [`${files - 2} structures`] };
     const name = "a closed folder's round and parse nodes end at its files less those r3con pruned before them: all in rounds 1 and 2, one fewer in round 3, two fewer in round 4 and the parse";
     check('live', name, done && isDeepStrictEqual(counts, expected), JSON.stringify(counts));
   });
@@ -7105,7 +7105,7 @@ const NOTE_SKIPPED = 'Skipped: output context length. The reply was cut off at t
 const PARSE_SKIPPED = "Skipped: schema error. The reply didn't fit its schema.";
 const SKIPPED_NODES = [
   [`parsed-${REGISTRY}`, `${stem(REGISTRY)}, parsed structure, skipped: schema error`, 'Skipped: schema error'],
-  [`r2-${EASTFIELD}`, `${stem(EASTFIELD)}, round 2 relevance snippet, skipped: output context length`, 'Skipped: output context length'],
+  [`r2-${EASTFIELD}`, `${stem(EASTFIELD)}, round 2 relevance summary, skipped: output context length`, 'Skipped: output context length'],
 ];
 const SKIPPED_POPUPS = [{ note: NOTE_SKIPPED, outputs: [] }, { note: PARSE_SKIPPED, outputs: [] }];
 const SKIPPED_LINE = `2 skipped: round-2 note of ${stem(EASTFIELD)} (output context length), parsing of ${stem(REGISTRY)} (schema error).`;
@@ -7366,7 +7366,7 @@ async function liveSkipInFolder(url) {
     const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
     const named = (await page.evaluate(skippedNodes)).map(([, name]) => name);
     const shown = { closed, opened: await expanded(), named };
-    const expected = { closed: 'false', opened: 'true', named: ['memo_0, round 2 relevance snippet, skipped: output context length'] };
+    const expected = { closed: 'false', opened: 'true', named: ['memo_0, round 2 relevance summary, skipped: output context length'] };
     check('live', 'a note skipped in a closed folder opens the folder, so that its mark shows', done && isDeepStrictEqual(shown, expected), JSON.stringify(shown));
   });
 }
@@ -7432,7 +7432,7 @@ const FAINT_RUNS = [
   { docs: 120, relevant: [5, 30, 31, 110] },
 ];
 const UNFOLDED_RUN = { docs: 8, relevant: [1, 3, 4, 6] };
-// Its quiet memos parse to records, as a real model's may: only a snippet, or the answer's trail, brings one out. It runs
+// Its quiet memos parse to records, as a real model's may: only a summary, or the answer's trail, brings one out. It runs
 // FEWER_ROUNDS, one, so that r3con prunes none of them.
 const PARSED_RUN = { docs: 150, relevant: [25, 75, 76, 125], parsed: true };
 const LONG_TASK_MS = 200;
@@ -7498,7 +7498,7 @@ async function liveFolds(url, server) {
     server.release();
     const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
     const rows = await page.evaluate(panelRows);
-    const readName = 'once read, each document with a snippet has a row of its own, and each run of three or more of the others is one fold, nothing relevant';
+    const readName = 'once read, each document with a summary has a row of its own, and each run of three or more of the others is one fold, nothing relevant';
     check('live', readName, done && isDeepStrictEqual(rows, FOLD_RUN_ROWS), rows.join(', '));
     // The answers centre on the rows rather than sit in one, and the schema heads its column.
     const order = await page.$$eval('#world .node:not(.answer, .schema)', (els) => els.map((el) => [el.dataset.id, parseFloat(el.style.top), parseFloat(el.style.left)]));
@@ -7523,7 +7523,7 @@ async function liveFolds(url, server) {
     const shown = pressed && (await count(page, inParts)) === 1 && (await page.$eval(nodeSel(`r1-${FOLD_RUN.inParts}`), (el) => el.classList.contains('void')));
     await pressNode(page, foldOfParts, { key: true });
     const refolded = (await count(page, inParts)) === 0 && isDeepStrictEqual(await page.evaluate(panelRows), FOLD_RUN_ROWS);
-    const partsName = 'a document read in parts leaves its fold once a part has a snippet; one whose parts have none folds, and shows in its own row, empty, while its fold is open';
+    const partsName = 'a document read in parts leaves its fold once a part has a summary; one whose parts have none folds, and shows in its own row, empty, while its fold is open';
     check('live', partsName, rows.includes(foldStem(FOLD_RUN, FOLD_RUN.relevantInParts)) && hidden && shown && refolded, `hidden ${hidden}, shown ${shown}, folded again ${refolded}`);
 
     const lastFold = FOLD_RUN_FOLDS.at(-1);
@@ -7620,14 +7620,14 @@ async function liveFoldsParsed(url) {
     const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
     await page.waitForTimeout(ARRANGE_MS);
     const longest = Math.max(0, ...(await page.evaluate(() => window.longTasks)));
-    // Every memo with a row of its own has a snippet, or a node on the answer's trail.
+    // Every memo with a row of its own has a summary, or a node on the answer's trail.
     const lit = await litNodes(page);
     const rowNodes = (d) => [fileNode(d), ...roundKinds(FEWER_ROUNDS).map((kind) => `${kind}-${d}`), `parsed-${d}`];
     const own = (await docIdsOf(page)).filter((id) => !id.startsWith('doc-f')).map((id) => Number(id.slice('doc-'.length)) - SAMPLE_DOCS);
     const outside = own.filter((d) => !PARSED_RUN.relevant.includes(d) && !rowNodes(d).some((id) => lit.includes(id))).map((d) => foldStem(PARSED_RUN, d));
     const folds = await count(page, '.node.fold.doc');
     const name = `a run of ${PARSED_RUN.docs} memos whose quiet ones parse to records keeps those folded, but for the trail's, with no task over ${LONG_TASK_MS} ms`;
-    check('live', name, done && longest <= LONG_TASK_MS && folds > 0 && outside.length === 0, `longest task ${Math.round(longest)} ms; ${folds} folds; ${own.length} own rows; ${outside.length} out without a snippet: ${outside.slice(0, 5).join(' ')}`);
+    check('live', name, done && longest <= LONG_TASK_MS && folds > 0 && outside.length === 0, `longest task ${Math.round(longest)} ms; ${folds} folds; ${own.length} own rows; ${outside.length} out without a summary: ${outside.slice(0, 5).join(' ')}`);
     const fills = await page.evaluate(misfilledParses);
     const fillsName = "once its folds have formed and re-formed over the run, each fold's parse is filled exactly when it is back with records, none stopped";
     check('live', fillsName, done && fills.filled > 0 && fills.wrong.length === 0, JSON.stringify(fills));
@@ -7858,7 +7858,7 @@ async function liveRoundsOf(url, rounds) {
     const gaps = columns.slice(1, -1).map(([x], c) => x - columns[c][0]);
     const placed = columns.every((xs) => xs.length === 1) && gaps.every((gap) => gap > 0 && gap === gaps[0]) && columns.at(-1)[0] > columns.at(-2)[0];
     const counted = nodes.length === SAMPLE_DOCS * (rounds + DOCUMENT_AND_PARSE) + STRUCTURE_AND_ANSWER && kinds.every((kind) => roundNodes.filter((n) => kindOf(n.id) === kind).length === SAMPLE_DOCS);
-    const named = roundNodes.every((n) => isDeepStrictEqual(n.labels, [stem(docOf(n.id)), `round ${roundOf(n.id)}`]) && n.name === `${stem(docOf(n.id))}, round ${roundOf(n.id)} relevance snippet`);
+    const named = roundNodes.every((n) => isDeepStrictEqual(n.labels, [stem(docOf(n.id)), `round ${roundOf(n.id)}`]) && n.name === `${stem(docOf(n.id))}, round ${roundOf(n.id)} relevance summary`);
     const columnsName = `${run} draws a column of ${SAMPLE_DOCS} nodes per round, in order between the documents and the schema, each labelled and named for its round`;
     check('live', columnsName, done && counted && placed && named, `${nodes.length} nodes; columns at ${columns.map((xs) => xs.join('/')).join(', ')}`);
     const geometry = await page.evaluate(dottedLineHits);

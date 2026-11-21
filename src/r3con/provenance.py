@@ -4,7 +4,7 @@ walk over it may follow, and the walk, whose result is the answer's trail.
 Each node of the graph is a string:
 
 - ``answer``, the answer;
-- ``summary:<round>:<id>``, the relevance snippet ``<id>`` of round ``<round>``, from
+- ``summary:<round>:<id>``, the relevance summary ``<id>`` of round ``<round>``, from
   1: its document's id, or ``<id>.<k>`` for part ``k`` of a document read in parts in
   that round (:mod:`r3con.stages.relevance`);
 - ``parse:<id>``, the parse of the document ``<id>``;
@@ -69,9 +69,9 @@ Edge = list[str]
 
 
 class Citations(TypedDict):
-    """What an answer cites: the ids of the relevance snippets it used (``<id>.<k>`` for
-    a part of a document read in parts), and those of the documents whose records it
-    used."""
+    """What an answer cites: the ids of the relevance summaries it used (``<id>.<k>``
+    for a part of a document read in parts), and those of the documents whose records
+    it used."""
 
     summary_ids: list[str]
     parse_ids: list[str]

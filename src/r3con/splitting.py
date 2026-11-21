@@ -510,7 +510,7 @@ def _kind(call: str, doc: int, k: int, n_parts: int) -> str:
 
 def call_kind(call: str, doc: int, part: int | None) -> str:
     """The kind ``call`` records for document ``doc`` read whole (``part`` ``None``),
-    ``{call}-d{doc}``, or for its part ``part``, from 1, as in the part's snippet id
+    ``{call}-d{doc}``, or for its part ``part``, from 1, as in the part's summary id
     ``<id>.<part>``: ``{call}-d{doc}c{part - 1}``."""
     return f"{call}-d{doc}" if part is None else f"{call}-d{doc}c{part - 1}"
 

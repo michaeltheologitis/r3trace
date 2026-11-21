@@ -22,7 +22,7 @@ nothing task-specific:
 
 Callers supply the rendered ``system_prompt`` + ``user_message``, the variables
 to bind in the sandbox (e.g. ``{"parse": ...}``), and the usual knobs. The loop
-itself knows nothing about parses, schemas, or relevance snippets.
+itself knows nothing about parses, schemas, or relevance summaries.
 
 Execution errors (runtime, timeout, unauthorized import, missing ``<code>``
 block) do **not** end the loop — they are fed back as observations so the
