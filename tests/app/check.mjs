@@ -1581,7 +1581,19 @@ function treeRows(indent) {
 
 // A node's label lines that show; and those of each round and parse node of the folder at index `at`.
 const linesOf = (page, selector) => page.$eval(selector, (el) => [...el.querySelectorAll('.label:not([hidden])')].map((label) => label.textContent));
-const stackLinesOf = async (page, at) => Object.fromEntries(await Promise.all(['r1', 'r2', 'parsed'].map(async (kind) => [kind, await linesOf(page, nodeSel(`${kind}-${at}`))])));
+const stackLinesOf = async (page, at, kinds = ['r1', 'r2', 'parsed']) => Object.fromEntries(await Promise.all(kinds.map(async (kind) => [kind, await linesOf(page, nodeSel(`${kind}-${at}`))])));
+
+// In-page: each count the nodes `ids` show, in turn, from when each is drawn.
+function recordCounts(ids) {
+  window.counts = Object.fromEntries(ids.map((id) => [id, []]));
+  const read = () => {
+    for (const id of ids) {
+      const count = document.querySelector(`.node[data-id="${id}"] .label.name`)?.textContent;
+      if (count && count !== window.counts[id].at(-1)) window.counts[id].push(count);
+    }
+  };
+  new MutationObserver(read).observe(document.getElementById('world'), { subtree: true, childList: true, characterData: true });
+}
 
 const folderSel = (name) => `#world .node.folder.doc[aria-label^="${name} folder,"]`;
 const folderId = (page, name) => page.$eval(folderSel(name), (el) => el.dataset.id);
@@ -1826,8 +1838,9 @@ async function folders() {
     check('folders', autoName, isDeepStrictEqual(after, landed), after.join(' | '));
     const lettersAt = (await folderId(page, 'letters')).slice('doc-'.length);
     const labelled = { head: await linesOf(page, folderSel('letters')), ...(await stackLinesOf(page, lettersAt)), fold: await linesOf(page, '#world .node.fold.r1') };
-    const stacked = { head: ['letters', '5 docs · 2 sources'], r1: ['5 snippets', 'round 1'], r2: ['5 snippets', 'round 2'], parsed: ['5 structures'], fold: ['0 snippets', 'round 1'] };
-    const stackName = "a closed folder's node says its name over its docs and sources; its round nodes how many snippets they gave, over their round, and its parse node how many structures; a fold of files with nothing relevant gave none";
+    const quietFiles = ARCHIVE[1].length;
+    const stacked = { head: ['letters', '5 docs · 2 sources'], r1: ['5 snippets', 'round 1'], r2: ['5 snippets', 'round 2'], parsed: ['5 structures'], fold: [`${quietFiles} snippets`, 'round 1'] };
+    const stackName = "a closed folder's node says its name over its docs and sources; once the run is done its round nodes count a snippet for each of its files, over their round, and its parse node a structure for each; a fold of files with nothing relevant counts all of its files too";
     check('folders', stackName, isDeepStrictEqual(labelled, stacked), JSON.stringify(labelled));
 
     await pressNode(page, folderSel('q3'));
@@ -1934,8 +1947,27 @@ async function folders() {
     const name = "a closed folder's lines stay as the run drew them once the panel folds again, among them a line from its one relevant file's snippet to the next round in it";
     check('folders', name, drawn.lines.includes(`${r1}>${r2}`) && isDeepStrictEqual(redrawn, drawn), JSON.stringify({ drawn, redrawn }));
     const counts = await stackLinesOf(page, id.slice('doc-'.length));
-    const countsName = "a closed folder of one note and two empty files counts only what the note gave: one snippet a round, one structure";
-    check('folders', countsName, isDeepStrictEqual(counts, { r1: ['1 snippet', 'round 1'], r2: ['1 snippet', 'round 2'], parsed: ['1 structure'] }), JSON.stringify(counts));
+    const countsName = "a closed folder of one note and two empty files counts all three once the run is done, empty or not: three snippets a round, three structures";
+    check('folders', countsName, isDeepStrictEqual(counts, { r1: ['3 snippets', 'round 1'], r2: ['3 snippets', 'round 2'], parsed: ['3 structures'] }), JSON.stringify(counts));
+  });
+
+  await withPage('folders', { sample: false }, async (page) => {
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    const files = FOLD_FROM_DOCS + 1;
+    await dropBatches(page, [[['quiet', Array.from({ length: files }, (_, i) => [`empty_${i}.txt`, ''])]]], files);
+    const at = (await folderId(page, 'quiet')).slice('doc-'.length);
+    const ids = { r1: `r1-${at}`, parsed: `parsed-${at}` };
+    await page.evaluate(recordCounts, Object.values(ids));
+    await page.click('#tab-chat');
+    await send(page, 'Which file is relevant?');
+    const done = await becomes(page, statusMatches, SIMULATED_DONE.source, REPLAY_MS);
+    const seen = await page.evaluate(() => window.counts);
+    const rises = (readings) => {
+      const counts = readings.map((text) => parseInt(text, 10));
+      return counts[0] === 0 && counts.at(-1) === files && counts.some((n) => n > 0 && n < files) && counts.every((n, i) => !i || n > counts[i - 1]);
+    };
+    const risesName = `while a run goes, a closed folder's round and parse nodes count its files' calls up as each lands, empty or not, from 0 before any is back to all ${files} once the column is done`;
+    check('folders', risesName, done && rises(seen[ids.r1]) && rises(seen[ids.parsed]), JSON.stringify(seen));
   });
 
   await withPage('folders', { sample: false }, async (page) => {
@@ -6950,6 +6982,27 @@ async function livePruned(url, server) {
   });
 }
 
+// The sample memos, a quiet one and a fading one in a folder closed before the run, over MAX_ROUNDS rounds: once done,
+// each round's node and the parse node count the folder's memos still read there.
+async function liveFolderPruned(url) {
+  const memos = [...sampleMemos(), quietMemo(), fadingMemo('07_fading_memo.txt', 'in a closed folder')];
+  const folder = ['pruned', memos.map(({ name, buffer }) => [name, buffer.toString()])];
+  await withPage('live', { url, sample: false }, async (page) => {
+    await page.evaluate(dropItems, { on: 'panel', items: [folder] });
+    await filesCounted(page, memos.length);
+    await pressNode(page, folderSel('pruned'));
+    await pickRounds(page, MAX_ROUNDS);
+    await page.click('#tab-chat');
+    await send(page, 'Which site logged the most incidents?');
+    const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
+    const counts = await stackLinesOf(page, (await folderId(page, 'pruned')).slice('doc-'.length), [...roundKinds(MAX_ROUNDS), 'parsed']);
+    const files = memos.length;
+    const expected = { r1: [`${files} snippets`, 'round 1'], r2: [`${files} snippets`, 'round 2'], r3: [`${files - 1} snippets`, 'round 3'], r4: [`${files - 2} snippets`, 'round 4'], parsed: [`${files - 2} structures`] };
+    const name = "a closed folder's round and parse nodes end at its files less those r3con pruned before them: all in rounds 1 and 2, one fewer in round 3, two fewer in round 4 and the parse";
+    check('live', name, done && isDeepStrictEqual(counts, expected), JSON.stringify(counts));
+  });
+}
+
 // fake_server.py's REASONING_BREAKS: a question holding it has every reasoning call raise until the check releases it.
 const REASONING_BREAKS = '(the reasoning breaks)';
 const REASONING_ERROR = "RuntimeError: the check's reasoning is down";
@@ -9943,6 +9996,7 @@ async function live() {
     await liveFoldsParsed(url);
     await liveQuotes(url);
     await livePartQuotes(url);
+    await liveFolderPruned(url);
     await liveDocumentLevel(url);
     await liveClaims(url);
     await liveClaimsDocumentLevel(url);
