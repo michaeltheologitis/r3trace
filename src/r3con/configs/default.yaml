@@ -10,15 +10,15 @@
 model: openai/gpt-6-luna
 
 # How many times each document is read. 1 = each read against the question alone;
-# 2+ = re-read in light of the other documents' relevance snippets.
+# 2+ = re-read in light of the other documents' relevance summaries.
 relevance_rounds: 2
 
-# How reasoning answers. direct = one call over the snippets and the whole parse;
+# How reasoning answers. direct = one call over the summaries and the whole parse;
 # coding = an agent that reads the parse with code, and runs when direct does not fit.
 reasoning: direct
 
-# What relevance records as evidence. sentence = each snippet with the sentences it is
-# based on, quoted; document = the snippet alone, so the trail ends at documents.
+# What relevance records as evidence. sentence = each summary with the sentences it
+# is based on, quoted; document = the summary alone, so the trail ends at documents.
 evidence_level: sentence
 
 # Whether a last call links each claim of the answer, each sentence, list item or table

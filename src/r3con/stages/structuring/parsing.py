@@ -275,7 +275,7 @@ def _request(
     (:func:`r3con.stages.relevance.citable_ids`), or any string when none is.
 
     Raises:
-        ValueError: if ``document_ids`` is not one id per snippet.
+        ValueError: if ``document_ids`` is not one id per summary.
     """
     citable = citable_ids(relevance_snippets, document_ids)
     system_prompt = load_prompt(
@@ -323,7 +323,7 @@ def _read(
 
 class SkippedPart(TypedDict):
     """A document's parse, or one part's, that was skipped: ``part``, the ``k`` of the
-    part's snippet id ``<id>.<k>``, or ``None`` for a document read whole, and
+    part's summary id ``<id>.<k>``, or ``None`` for a document read whole, and
     ``reason``, why (:class:`~r3con.runtime.llm.UnusableReply`)."""
 
     part: int | None
@@ -372,7 +372,7 @@ def parse_one_document(
     The system prompt carries the task, the schema source, and the relevant
     context (``relevance_snippets`` — every document's note, the
     cross-document context), each note headed by its document's id from
-    ``document_ids``, one per snippet; the user message is the document under its
+    ``document_ids``, one per summary; the user message is the document under its
     ``document_id`` (for a part, its document's). One LLM call, whose reply is the
     ``Parse`` and the ids of the notes it used.
 
@@ -386,7 +386,7 @@ def parse_one_document(
 
     Raises:
         ValueError: if ``max_attempts`` is not positive, or ``document_ids`` is not one
-            id per snippet.
+            id per summary.
         UnusableReply: when the reply stays unusable, which :func:`parse_documents`
             skips instead.
     """

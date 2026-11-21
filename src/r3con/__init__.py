@@ -6,28 +6,28 @@ answering it is built *per question*, at the moment you ask:
     >>> from r3con import r3con
     >>> result = r3con.run("Which supplier missed the most delivery windows?", docs)
     >>> print(result)                 # the answer
-    >>> result.provenance                    # the snippets, parses, documents, quotes, trail and claims
+    >>> result.provenance                    # the summaries, parses, documents, quotes, trail and claims
     >>> result.relevant_context              # what each document contributed
     >>> result.structured_context            # the structured parse behind it
 
 Three moves, in order:
 
 1. **surfacing relevance** — every document is read against the question and written up
-   as a **relevance snippet**; then re-read in light of the *other* documents' snippets,
-   until it is pruned for saying nothing. Together they are the **relevant context**.
+   as a **relevance summary**; then re-read in light of the *other* documents'
+   summaries, until it is pruned for saying nothing. Together they are the **relevant context**.
    Relevance is not a property a document has; it is a relation between the document,
    the question, and the rest of the collection, so it cannot be settled from a
    document in isolation.
 2. **structuring** — a Pydantic schema is proposed for exactly what this question needs,
    then every document not pruned is parsed into instances of it.
 3. **reasoning** — one call answers over the structured records and the relevance
-   snippets together; or, when the run asks for it or that prompt does not fit the
+   summaries together; or, when the run asks for it or that prompt does not fit the
    model's window, the merged parse is loaded into a sandboxed Python runtime and an
    agent reasons there with code. Either way the answer cites the documents it used.
 
 The whole collection is never placed in a single prompt: each document is read on its
 own, in parts when it is too long for the model's window, and information crosses
-document boundaries through the relevance snippets.
+document boundaries through the relevance summaries.
 """
 
 from importlib import metadata as _metadata

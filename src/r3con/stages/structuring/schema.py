@@ -50,7 +50,7 @@ _FENCE_RE = re.compile(
     re.DOTALL,
 )
 
-# The schema prompts ask for a brief ``Thought:`` snippet before the
+# The schema prompts ask for a brief ``Thought:`` note before the
 # ``<schema>`` block. We pull it out for ``structuring/schema/result.json`` so
 # the schema-design reasoning is readable without reading the raw transcript.
 # Captures everything after ``Thought:`` until the schema body delimiter
@@ -84,7 +84,7 @@ def _extract_schema(text: str) -> str:
 
 
 def _extract_thought(text: str) -> str | None:
-    """Pull the ``Thought:`` snippet out of the model's response.
+    """Pull the ``Thought:`` note out of the model's response.
 
     Returns the prose after ``Thought:`` up to the schema body
     delimiter (the ``<schema>`` tag or a markdown fence), stripped.

@@ -1,33 +1,33 @@
-"""Stage 1: surfacing relevance — the per-document, task-conditioned relevance snippets.
+"""Stage 1: surfacing relevance — each document's task-conditioned relevance summary.
 
-A relevance snippet is **not** a generic summary. Each one is written *for a specific
-task* and is conditioned on it — the note one document contributes toward the task,
-read in light of the rest of the corpus. The point is cross-document reasoning: to use
-one document for the task you often need to know what the others say. The per-document
-snippets taken together are the **relevant context**.
+A relevance summary is **not** a generic summary of its document. Each one is written
+*for a specific task* and is conditioned on it — the note one document contributes
+toward the task, read in light of the rest of the corpus. The point is cross-document
+reasoning: to use one document for the task you often need to know what the others
+say. The per-document summaries taken together are the **relevant context**.
 
 A document too long for the model's window is read in parts (:mod:`r3con.splitting`),
-and its snippet is then one note per part. Cross-corpus awareness is built over
+and its summary is then one note per part. Cross-corpus awareness is built over
 ``rounds`` **synchronous** rounds:
 
-- **Round 1** — each document's relevance snippet is written from the task and the
+- **Round 1** — each document's relevance summary is written from the task and the
   document alone (no other document is visible), with the ``relevance/first-round``
   prompt. The reply is structured: the ``summary``, or null, and its ``quotes``, the
   sentences of the document it is based on.
-- **Round k ≥ 2** — each document's snippet is rewritten given the task and the
-  **previous round's** snippets of the OTHER documents (never the document's own prior
-  snippet — the document itself is in the user message), with the
+- **Round k ≥ 2** — each document's summary is rewritten given the task and the
+  **previous round's** summaries of the OTHER documents (never the document's own prior
+  summary — the document itself is in the user message), with the
   ``relevance/later-rounds`` prompt. Only the immediately-previous round is fed in, not
-  the whole history. The reply adds ``provenance_ids``, the ids of the shown snippets
+  the whole history. The reply adds ``provenance_ids``, the ids of the shown summaries
   it used. With nothing to show, the first-round prompt is used instead.
 
-After each round from 2 on, a document whose snippet in it is empty, every part's, and
+After each round from 2 on, a document whose summary in it is empty, every part's, and
 none of them skipped (below), is **pruned** (:attr:`RelevantContext.pruned`): no later
-round reads it, its snippet there empty, and parsing does not parse it
+round reads it, its summary there empty, and parsing does not parse it
 (:mod:`r3con.stages.structuring.parsing`), the final round's included. An empty round-1
-snippet alone prunes nothing, since round 2 may bring the document back once the others
-are known; with fewer than two rounds nothing is pruned. The other documents' snippets
-in the round it went empty in may still cite its snippet of the round before, so the
+summary alone prunes nothing, since round 2 may bring the document back once the others
+are known; with fewer than two rounds nothing is pruned. The other documents' summaries
+in the round it went empty in may still cite its summary of the round before, so the
 answer's trail can reach it through them.
 
 A note whose reply stays unusable, still empty after its re-rolls or still unfit after
@@ -44,7 +44,7 @@ Any other error fails the run.
 Relevance reads at one of two evidence levels (``evidence_level``). At
 ``"sentence"``, the default, each reply quotes the sentences of the document its summary
 is based on, as above. At ``"document"``, neither the prompts nor the reply schema
-mention quotes, so every snippet keeps none, and the answer's trail ends at documents.
+mention quotes, so every summary keeps none, and the answer's trail ends at documents.
 
 Each quote is looked for in the text its call read (:func:`r3con.quotes.locate_quotes`)
 and kept with its position in the whole document and the document's words there, or
@@ -52,16 +52,16 @@ with neither when it is not found; a null or empty summary keeps no quotes. Late
 read the summaries alone; the quotes are kept for inspection and for the quotes behind
 an answer (:mod:`r3con.provenance`).
 
-Every document has an id for the run (:func:`draw_document_ids`), and each snippet
+Every document has an id for the run (:func:`draw_document_ids`), and each summary
 carries its document's id, or ``<id>.<k>`` for part ``k`` of a document read in parts in
-that round. The model sees ids only on the other documents' snippets, never the id of
+that round. The model sees ids only on the other documents' summaries, never the id of
 the document it is reading.
 
 Round k reads the *frozen* round-(k-1) set, so within a round the per-document calls
 are independent and fan out in parallel (bounded by
 :func:`r3con.settings.active_doc_workers`); a provider that signs in on its first
 call gets one call at a time until one has signed in (:mod:`r3con.runtime.llm`).
-Downstream stages consume the relevant context, the snippets of
+Downstream stages consume the relevant context, the summaries of
 :attr:`RelevantContext.context_round` (``RelevantContext.snippets``); earlier rounds are
 kept for inspection and for the answer's trail back through them
 (:mod:`r3con.provenance`).
@@ -102,16 +102,16 @@ _ID_HEX_DIGITS = 6
 _REWRITE = "Write the summary of the same document again"
 
 Snippet = str | list[str]
-"""A document's relevance snippet, or, for a document read in parts, one per part."""
+"""A document's relevance summary, or, for a document read in parts, one per part."""
 
 
 @dataclass(frozen=True)
 class SnippetRecord:
-    """One relevance snippet with its id: a whole document's, or one part's.
+    """One relevance summary with its id: a whole document's, or one part's.
 
-    ``summary`` is the snippet's text, ``quotes`` the sentences of the document it is
+    ``summary`` is its text, ``quotes`` the sentences of the document it is
     based on, each where it was found in the whole document (none at the document
-    evidence level), and ``provenance`` the ids of the previous round's snippets it
+    evidence level), and ``provenance`` the ids of the previous round's summaries it
     used: empty in round 1, and whenever it used none. ``skipped`` is ``None``, or,
     for a note skipped as its reply stayed unusable, why
     (:class:`~r3con.runtime.llm.UnusableReply`), the record then empty.
@@ -128,7 +128,7 @@ class SnippetRecord:
 class RelevantContext:
     """Output of :func:`surface_relevance` — the relevant context.
 
-    ``records[k][d]`` is document ``d``'s snippet in round ``k+1``, one record per part
+    ``records[k][d]`` is document ``d``'s summary in round ``k+1``, one record per part
     (one for a document read whole). Earlier rounds are kept for inspection and for
     the answer's trail (:mod:`r3con.provenance`); the round of :attr:`context_round` is
     what downstream stages consume, as :attr:`snippets`. ``pruned_after`` maps each
@@ -155,7 +155,7 @@ class RelevantContext:
 
     @property
     def context_round(self) -> int:
-        """The round, from 1, whose snippets are the relevant context, which every
+        """The round, from 1, whose summaries are the relevant context, which every
         later stage reads: the final one, or round 1 when the run pruned every
         document. Nothing relevant is then left in the end, so there is nothing to
         structure: the schema is one of no field, proposed without a call, nothing is
@@ -165,7 +165,7 @@ class RelevantContext:
 
     @property
     def snippets(self) -> list[Snippet]:
-        """The relevant context: each document's snippet in :attr:`context_round`, a
+        """The relevant context: each document's summary in :attr:`context_round`, a
         note skipped there replaced by the one :attr:`note_rounds` keeps in its place,
         aligned 1:1 with the input ``documents``: its text, or, for a document read in
         parts, one per part. Empty when no round ran."""
@@ -176,7 +176,7 @@ class RelevantContext:
 
     @property
     def provenance(self) -> list[list[str]]:
-        """The ids each document's snippet in the relevant context used (a note kept
+        """The ids each document's summary in the relevant context used (a note kept
         from an earlier round, those of the round before its own), aligned with
         :attr:`snippets`, a document read in parts having its parts' ids combined
         (:func:`combine_parts`)."""
@@ -221,8 +221,8 @@ class RelevantContext:
 
 
 def _pruned(round_: Sequence[Sequence[SnippetRecord]]) -> frozenset[int]:
-    """The documents ``round_``'s snippets prune, by index: those whose snippet there is
-    empty, every part's, none of them skipped."""
+    """The documents ``round_``'s summaries prune, by index: those whose summary
+    there is empty, every part's, none of them skipped."""
     return frozenset(
         d
         for d, parts in enumerate(round_)
@@ -244,7 +244,7 @@ def relevance_call(round_: int) -> str:
 
 
 def part_ids(document_id: str, n_parts: int) -> list[str]:
-    """The ids of a document's snippets in one round: its id when read whole, else
+    """The ids of a document's summaries in one round: its id when read whole, else
     ``<id>.<k>`` for part ``k``, from 1."""
     if n_parts == 1:
         return [document_id]
@@ -253,7 +253,7 @@ def part_ids(document_id: str, n_parts: int) -> list[str]:
 
 def part_number(p: int, n_parts: int) -> int | None:
     """The number of part ``p``, from 0, of a document read in ``n_parts``: the ``k``
-    of its snippet id ``<id>.<k>`` (:func:`part_ids`), or ``None`` for a document read
+    of its summary id ``<id>.<k>`` (:func:`part_ids`), or ``None`` for a document read
     whole."""
     return None if n_parts == 1 else p + 1
 
@@ -274,7 +274,7 @@ def warn_of_skips(
 
 
 def join_parts(snippet: Snippet) -> str:
-    """A document's snippet as one note: a split document's part notes, stripped, in
+    """A document's summary as one note: a split document's part notes, stripped, in
     order, joined by a blank line, with the empty ones left out."""
     if isinstance(snippet, str):
         return snippet
@@ -285,18 +285,18 @@ def render_relevance(
     relevance_snippets: Sequence[Snippet] | None,
     document_ids: Sequence[str] | None = None,
 ) -> str:
-    """Render the relevance snippets into the labeled block a prompt embeds as the
+    """Render the relevance summaries into the labeled block a prompt embeds as the
     relevant context.
 
     Each document gets a ``### Document N`` heading, and each part of a document read in
     parts a ``### Document N.k`` heading, ``k`` from 1. With ``document_ids``, one per
-    snippet, the headings name each document, and each part, by its id instead
+    summary, the headings name each document, and each part, by its id instead
     (:func:`part_ids`): ``### Document ID: <id>``. A note with nothing relevant renders
     as ``(no relevant summary for this task)``. An empty / ``None`` list renders to
     ``""`` so the consuming prompt omits the block.
 
     Raises:
-        ValueError: if ``document_ids`` is not one id per snippet.
+        ValueError: if ``document_ids`` is not one id per summary.
     """
     numbers = [str(n) for n in range(1, len(relevance_snippets or ()) + 1)]
     names, label = (
@@ -316,10 +316,10 @@ def citable_ids(
 ) -> list[str]:
     """The ids of the notes :func:`render_relevance` shows under ``document_ids`` that
     a reply may cite, in order: every note's but an empty one's, as a later relevance
-    round shows only non-empty snippets.
+    round shows only non-empty summaries.
 
     Raises:
-        ValueError: if ``document_ids`` is not one id per snippet.
+        ValueError: if ``document_ids`` is not one id per summary.
     """
     return [
         id_
@@ -336,7 +336,7 @@ def _headed_notes(
     parts (:func:`part_ids`); nothing for an empty / ``None`` list.
 
     Raises:
-        ValueError: if ``names`` is not one name per snippet.
+        ValueError: if ``names`` is not one name per summary.
     """
     if not relevance_snippets:
         return
@@ -347,7 +347,7 @@ def _headed_notes(
 
 
 def _render_other_snippets(shown: Mapping[str, str]) -> str:
-    """The shown snippets, each under its ``### Summary ID: <id>`` heading, separated
+    """The shown summaries, each under its ``### Summary ID: <id>`` heading, separated
     by blank lines."""
     return "\n\n".join(f"### Summary ID: {id_}\n{s}" for id_, s in shown.items())
 
@@ -368,7 +368,7 @@ def _request(
     prompts: Mapping[PromptStage, str],
     evidence_level: EvidenceLevel,
 ) -> CitingRequest:
-    """A document's request in one round, given the OTHER documents' non-empty snippets
+    """A document's request in one round, given the OTHER documents' non-empty summaries
     it shows, by id: the first-round prompt and its ``{summary, quotes}`` reply when
     there are none, else the later-rounds prompt and its ``{summary, quotes,
     provenance_ids}`` reply. At the document ``evidence_level``, neither prompt nor
@@ -403,8 +403,8 @@ def _read(
     request: CitingRequest, part: str, *, kind: str, max_attempts: int, **llm_call: Any
 ) -> tuple[str, list[str], list[str]]:
     """``part`` (a document or one part of one) read under ``request`` by
-    :func:`~r3con.stages.citing.read_citing`: its snippet, stripped, its quotes,
-    none for an empty snippet or a reply without quotes, and the shown ids it used."""
+    :func:`~r3con.stages.citing.read_citing`: its summary, stripped, its quotes,
+    none for an empty summary or a reply without quotes, and the shown ids it used."""
     reply, provenance = read_citing(
         request,
         part,
@@ -465,12 +465,12 @@ def relevance_snippet(
     max_attempts: int | None = None,
     **llm_kwargs: Any,
 ) -> tuple[str, list[Quote], list[str]]:
-    """Surface one ``document``'s relevance snippet for the task, given the OTHER
-    documents' previous-round snippets by id (empty in round 1).
+    """Surface one ``document``'s relevance summary for the task, given the OTHER
+    documents' previous-round summaries by id (empty in round 1).
 
-    The task + the other documents' snippets live in the system prompt; the document is
+    The task + the other documents' summaries live in the system prompt; the document is
     the user message. ``prompts`` pins the version of ``relevance/first-round`` and
-    ``relevance/later-rounds`` (a run config's ``prompts``). With no non-empty snippet
+    ``relevance/later-rounds`` (a run config's ``prompts``). With no non-empty summary
     to show, the call uses the first-round prompt and a structured ``{summary, quotes}``
     reply; otherwise the later-rounds prompt and a ``{summary, quotes,
     provenance_ids}`` reply. At the ``"document"`` ``evidence_level``, neither prompt
@@ -478,10 +478,10 @@ def relevance_snippet(
     is sent again with the validator's error, up to ``max_attempts`` sends (``None``
     reads ``settings.RELEVANCE_MAX_ATTEMPTS``).
 
-    Returns the snippet, stripped — an empty string is allowed (the document contributes
-    nothing relevant to the task) — its quotes, each located in ``document``
-    (:func:`r3con.quotes.locate_quotes`), none for an empty snippet, and the shown ids
-    it used.
+    Returns the summary, stripped — an empty string is allowed (the document
+    contributes nothing relevant to the task) — its quotes, each located in
+    ``document`` (:func:`r3con.quotes.locate_quotes`), none for an empty summary, and
+    the shown ids it used.
 
     Raises:
         ValueError: if ``max_attempts`` is not positive.
@@ -524,11 +524,11 @@ def surface_relevance(
 ) -> RelevantContext:
     """Surface the relevant context over ``rounds`` synchronous rounds.
 
-    Round 1 writes each document's snippet from the task + document alone; each later
+    Round 1 writes each document's summary from the task + document alone; each later
     round rewrites every document but the pruned ones given the *previous round's*
-    snippets of the OTHER documents (never its own). Returns a
-    :class:`RelevantContext` holding every round's snippet records. ``rounds=1`` =
-    independent round-1 only; ``rounds < 1`` = no relevance snippets at all (no records
+    summaries of the OTHER documents (never its own). Returns a
+    :class:`RelevantContext` holding every round's summary records. ``rounds=1`` =
+    independent round-1 only; ``rounds < 1`` = no relevance summaries at all (no records
     — a deliberate "no-relevance" run). An empty ``documents`` → empty results.
 
     ``document_ids`` names each document, one distinct id each
@@ -536,13 +536,13 @@ def surface_relevance(
     ``max_attempts`` are as in :func:`relevance_snippet`.
 
     Each document is read through ``splits`` (built over ``documents``; ``None`` builds
-    one), so a document too long for the model's window is read in parts, one snippet
+    one), so a document too long for the model's window is read in parts, one summary
     per part, and stays split in later rounds. A part never sees its own document's
     other parts: the others' block holds the other documents only, a split one's
-    snippets listed separately under their part ids.
+    summaries listed separately under their part ids.
 
     A pruned document (:attr:`RelevantContext.pruned`) is not read in a later round: its
-    snippet there is empty, under the ids it had in the round before, and reports
+    summary there is empty, under the ids it had in the round before, and reports
     nothing.
 
     A part whose reply stays unusable (:class:`~r3con.runtime.llm.UnusableReply`) is
@@ -555,12 +555,12 @@ def surface_relevance(
     that prunes is in, ``documents_pruned`` (:func:`r3con.pipeline.run_pipeline` lists
     their fields). It is called from worker threads.
 
-    ``saved`` holds snippets an earlier attempt at the run read, skipped ones included,
+    ``saved`` holds summaries an earlier attempt at the run read, skipped ones included,
     by round and document index (:func:`r3con.pipeline.resume_pipeline`): such a
     document is not read again in that round, and reports nothing. ``recorded`` maps
     each document that attempt pruned after a round up to ``recorded_through`` to that
     round, as it recorded it: up to that round, those are the documents pruned,
-    whatever their snippets say, and no ``documents_pruned`` is reported again.
+    whatever their summaries say, and no ``documents_pruned`` is reported again.
 
     Raises:
         ValueError: if ``document_ids`` is not one distinct id per document, or
@@ -573,9 +573,9 @@ def surface_relevance(
             f"{len(documents)} document(s)."
         )
     attempts = _attempts(max_attempts)
-    # rounds < 1 = "no relevance snippets at all" (a deliberate rounds=0 re-run); an empty
-    # document corpus is likewise empty. Both short-circuit BEFORE round 1 runs (the
-    # unconditional first run_round below) — a `return`, not a fall-through.
+    # rounds < 1 = "no relevance summaries at all" (a deliberate rounds=0 re-run); an
+    # empty document corpus is likewise empty. Both short-circuit BEFORE round 1 runs
+    # (the unconditional first run_round below) — a `return`, not a fall-through.
     if rounds < 1 or not documents:
         return RelevantContext(records=[])
 
@@ -585,8 +585,8 @@ def surface_relevance(
     def run_round(
         prev: list[list[SnippetRecord]], round_idx: int, unread: Collection[int]
     ) -> list[list[SnippetRecord]]:
-        """Rewrite every document's relevance snippet in parallel, but the pruned
-        ones', ``unread``. ``prev`` is the frozen previous-round set (no snippets in
+        """Rewrite every document's relevance summary in parallel, but the pruned
+        ones', ``unread``. ``prev`` is the frozen previous-round set (no summaries in
         round 1)."""
         _log.info(
             "round %d/%d · %d doc(s) (≤%d parallel)",
@@ -602,7 +602,7 @@ def surface_relevance(
                 return [SnippetRecord(r.id, "", [], []) for r in prev[i]]
             if (records := saved.get((round_idx, i))) is not None:
                 return records
-            # Others-only: document i sees the previous round's snippets of the OTHER
+            # Others-only: document i sees the previous round's summaries of the OTHER
             # documents, never its own (the document itself is the user message).
             own = {record.id for record in prev[i]}
             others = {id_: s for id_, s in shown.items() if id_ not in own}
@@ -646,7 +646,7 @@ def surface_relevance(
         result = parallel_map(one, documents, max_workers=max_workers)
         n_nonempty = sum(1 for parts in result if any(r.summary for r in parts))
         _log.info(
-            "round %d/%d done · %d/%d doc(s) had a relevant snippet",
+            "round %d/%d done · %d/%d doc(s) had a relevant summary",
             round_idx,
             rounds,
             n_nonempty,

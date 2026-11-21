@@ -34,14 +34,14 @@ Layout per ``logs/<run-folder>/``:
   skipped}]}], totals}`` — ``pruned_after`` the id of each document relevance pruned,
   in document order, mapped to the round after which it was pruned
   (:attr:`r3con.stages.relevance.RelevantContext.pruned`); within
-  a round every relevance snippet in document order, a document read in parts as one
+  a round every relevance summary in document order, a document read in parts as one
   per part, each with its id (the document's, or ``<id>.<k>`` for part ``k`` in that
   round), its quotes, each ``{text, start, end, document_text, match, score}``: the
-  sentence the snippet says it is based on, where it is in the whole document, the
+  sentence the summary says it is based on, where it is in the whole document, the
   document's own words there, and how it was found there (``exact``, ``normalized`` or
   ``elided``, verbatim, or ``fuzzy``, only like the text, with its ``score``; all
   ``None`` when it was not: :mod:`r3con.quotes`), the ids of the previous round's
-  snippets it used, and ``skipped``, ``null``, or why the note was skipped, its other
+  summaries it used, and ``skipped``, ``null``, or why the note was skipped, its other
   fields then empty (:attr:`r3con.stages.relevance.SnippetRecord.skipped`); the
   summaries of :attr:`r3con.stages.relevance.RelevantContext.context_round`, a skipped
   one's place taken by an earlier round's note where one is kept
@@ -58,7 +58,7 @@ Layout per ``logs/<run-folder>/``:
   (``{parsed, source_docs, source_ids, provenance, skipped, totals}`` — for each list
   field of ``parsed``, the 0-based index and the id of the document each record came
   from, a part's records carrying their document's; and per document, in document
-  order, the ids of the relevance snippets its parse used, and its parts whose parse
+  order, the ids of the relevance summaries its parse used, and its parts whose parse
   was skipped, each ``{part, reason}``, ``part`` ``null`` for a document read whole,
   none for most) + ``calls.json`` (one entry per
   ``parse-d{doc}`` call, or ``parse-d{doc}c{part}`` for a part, ``-retry-{n}`` added to
