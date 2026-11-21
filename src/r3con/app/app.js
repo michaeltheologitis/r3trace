@@ -4082,18 +4082,18 @@
 
   /** @param {NodeKind} kind */
   const columnName = (kind) => (isRound(kind) ? roundName(kind) : kind === 'parsed' ? 'parsed' : '');
-  // A folded row's round or parse node counts what its documents gave, not its files: pruned and empty ones give none.
-  /** @param {NodeKind} kind @param {number} produced */
-  const stackLabels = (kind, produced) => [plural(produced, kind === 'parsed' ? 'structure' : 'snippet'), isRound(kind) ? roundName(kind) : ''];
+  // A folded row's round or parse node counts its calls back, however they ended; a document pruned before has none.
+  /** @param {NodeKind} kind @param {number} settled */
+  const stackLabels = (kind, settled) => [plural(settled, kind === 'parsed' ? 'structure' : 'snippet'), isRound(kind) ? roundName(kind) : ''];
 
   // Before a run a fold counts its files; in a run, its first node says whether they are read.
-  /** @param {Tab} tab @param {PanelNode} node @param {number} [produced] what a round or parse node's documents gave */
-  function labelFold(tab, node, produced = foldCalls(tab, node.kind, foldDocs(/** @type {FoldRow} */ (node.fold))).produced) {
+  /** @param {Tab} tab @param {PanelNode} node @param {number} [settled] how many of a round or parse node's calls are back */
+  function labelFold(tab, node, settled = foldCalls(tab, node.kind, foldDocs(/** @type {FoldRow} */ (node.fold))).settled) {
     const row = /** @type {FoldRow} */ (node.fold);
-    if (row.folder) return labelFolder(tab, node, row.folder, produced);
+    if (row.folder) return labelFolder(tab, node, row.folder, settled);
     const files = plural(row.end - row.start + 1, tab.run ? 'file' : 'more file');
     const status = foldStatus(tab, row);
-    const [count, under] = node.kind === 'doc' ? [files, [status, row.open && 'fold'].filter(Boolean).join(' · ')] : stackLabels(node.kind, produced);
+    const [count, under] = node.kind === 'doc' ? [files, [status, row.open && 'fold'].filter(Boolean).join(' · ')] : stackLabels(node.kind, settled);
     const [name, sub] = /** @type {NodeListOf<HTMLElement>} */ (node.el.querySelectorAll('.label'));
     name.textContent = count;
     sub.textContent = under;
@@ -4106,8 +4106,8 @@
     node.el.classList.toggle('open', row.open);
   }
 
-  /** @param {Tab} tab @param {PanelNode} node @param {Folder} folder @param {number} produced */
-  function labelFolder(tab, node, folder, produced) {
+  /** @param {Tab} tab @param {PanelNode} node @param {Folder} folder @param {number} settled */
+  function labelFolder(tab, node, folder, settled) {
     const { open } = /** @type {FoldRow} */ (node.fold);
     const docs = plural(folder.end - folder.start + 1, 'doc');
     const { trail } = tab;
@@ -4117,7 +4117,7 @@
     const counted = !open && sources > 0 && plural(sources, 'source');
     // Only a closed folder counts its documents' quotes, at any depth in it: an open one's documents show their own.
     const quotes = counted ? foldDocs(folder).reduce((sum, d) => sum + highlighted(tab, d), 0) : 0;
-    const [first, second] = head ? [shortLabel(folder.name), [docs, counted && [' · ', h('span', { class: 'sources' }, counted)]]] : stackLabels(node.kind, produced);
+    const [first, second] = head ? [shortLabel(folder.name), [docs, counted && [' · ', h('span', { class: 'sources' }, counted)]]] : stackLabels(node.kind, settled);
     const [name, sub] = /** @type {NodeListOf<HTMLElement>} */ (node.el.querySelectorAll('.label'));
     name.textContent = first;
     fill(sub, second);
@@ -4143,15 +4143,15 @@
     const working = calls.includes('working');
     const run = runTab(tab).run;
     const gave = kind === 'doc' ? [] : docs.filter((d, k) => calls[k] === 'done' && !isVoid(run, `${kind}-${d}`));
-    const produced = gave.filter((d) => !skippedWhole(run, `${kind}-${d}`)).length;
-    return { started: calls.some(Boolean), working, failed, empty: !working && !failed && kind !== 'doc' && !gave.length, produced };
+    const settled = calls.filter((call) => call === 'done' || call === 'failed').length;
+    return { started: calls.some(Boolean), working, failed, empty: !working && !failed && kind !== 'doc' && !gave.length, settled };
   }
 
   // A node drawn as it stands already isn't drawn again, so that its open popup isn't built again.
   /** @param {Tab} tab @param {PanelNode} node @param {boolean} [fresh] */
   function paintNode(tab, node, fresh = false) {
     const docs = node.fold ? foldDocs(node.fold) : [/** @type {number} */ (docOf(tab, node.id))];
-    const { started, working, failed, empty, produced } = foldCalls(tab, node.kind, docs);
+    const { started, working, failed, empty, settled } = foldCalls(tab, node.kind, docs);
     const classes = node.el.classList;
     if (working) {
       classes.remove('void', 'failed');
@@ -4162,7 +4162,7 @@
       if (changed) drawSettled(tab, node, { empty, failed });
     }
     if (!node.fold) return;
-    labelFold(tab, node, produced);
+    labelFold(tab, node, settled);
     const head = tab.nodes.get(foldId('doc', node.fold));
     if (head && head !== node && !node.fold.folder) labelFold(tab, head);
   }
