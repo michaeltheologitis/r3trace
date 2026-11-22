@@ -1913,7 +1913,7 @@
   const SIDE_WIDTH_KEY = 'r3con-proto-side-width';
   // In sessionStorage: what r3con app opened this tab with, for a reload.
   const LAUNCH_KEY = 'r3con-launch';
-  // The side column's narrowest, where the composer and the files pane still fit, its widest as a share of the frame, and a key press's step.
+  // The side column's narrowest, where the composer and the files pane still fit, its widest as a share of the frame (app.css holds its default to it too), and a key press's step.
   const SIDE_MIN_PX = 280;
   const SIDE_MAX_SHARE = 0.6;
   const SIDE_STEP_PX = 16;

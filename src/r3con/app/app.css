@@ -1,6 +1,7 @@
 /* Layout: a terminal window. The run panel (a pannable canvas) fills the left, a column on the right,
-   46ch until its edge is dragged, holds the chat and the files tab; on phones the panel stacks above
-   that column. */
+   62ch until its edge is dragged, holds the chat and the files tab; on phones the panel stacks above
+   that column. 62ch fits the composer's widest row on one line, and the column keeps to 60% of the frame
+   as a dragged width does. */
 :root {
   /* Light by name, not by the default normal, so each light-dark() below takes its first colour in every engine. */
   color-scheme: light;
@@ -126,7 +127,7 @@ p { margin: 0; }
 .frame {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) var(--side-width, 46ch);
+  grid-template-columns: minmax(0, 1fr) var(--side-width, min(62ch, 60%));
   min-height: 0;
   border: 1px solid var(--line);
   border-radius: 6px;
