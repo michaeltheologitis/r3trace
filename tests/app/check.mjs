@@ -415,6 +415,8 @@ const BLANK_INSET_PX = 60;
 // The separator's focus bar, and a desktop window narrow enough to hold the widest chat back.
 const FOCUS_BAR_PX = 3;
 const NARROW_DESKTOP = { width: 1000, height: 900 };
+// A desktop window a little wider than the page stacks at, 760 px, where the default chat would pass its widest.
+const SIDE_BY_SIDE = { width: 800, height: 900 };
 // Long enough that a second click lands while the first save is still in flight.
 const SLOW_SAVE_MS = 400;
 // fake_server.py's summary_of: a text's first line that is not quiet.
@@ -3500,12 +3502,13 @@ async function popupArea() {
     const moved = `${before.left},${before.top} → ${dropped.left},${dropped.top}`;
     check('popup', 'dragging its header moves it', sameSpot(dropped, target), moved);
 
-    await clickNode(page, 'r1-1');
+    // Both in the documents' column: the dropped popup covers the panel's top right of it.
+    await clickNode(page, 'doc-1');
     const first = await popup(page);
     await clickNode(page, 'doc-3');
     const second = await popup(page);
     const titles = [first.title, second.title];
-    const selected = isDeepStrictEqual(titles, ['● 02_eastfield · round 1', '● 04_contractor_registry.txt']);
+    const selected = isDeepStrictEqual(titles, ['● 02_eastfield.txt', '● 04_contractor_registry.txt']);
     const stayed = selected && sameSpot(first, dropped) && sameSpot(second, dropped);
     check('popup', 'it stays where it was dropped while other nodes are selected', stayed, titles.join(' · '));
 
@@ -5234,6 +5237,13 @@ async function chatWidthArea() {
     const { side, frame } = await page.evaluate(sideWidths);
     const stacked = separators === 0 && side === frame;
     check('chat width', `${LAYOUTS.phone.name}: the chat, stacked under the panel, has no separator and fills the width, whatever width was kept`, stacked, `${separators} separators; ${side} of ${frame}`);
+  });
+
+  const sideBySide = { name: `${SIDE_BY_SIDE.width} light`, options: { ...LAYOUTS.desktop.options, viewport: SIDE_BY_SIDE } };
+  await withPage('chat width', { layout: sideBySide, sample: false }, async (page) => {
+    const held = await becomes(page, sideAtMax, SIDE_MAX_SHARE);
+    const heldName = `${sideBySide.name}: with no width kept, the chat's default is held to ${SIDE_MAX_SHARE * 100}% of the frame, as a kept width is`;
+    check('chat width', heldName, held, JSON.stringify(await page.evaluate(sideWidths)));
   });
 }
 
@@ -8168,6 +8178,51 @@ async function liveWhileGoing(url) {
   });
 }
 
+// What navigator.platform says on a Mac and elsewhere, and the follow-up keys the page then names.
+const PLATFORM_KEYS = [
+  ['MacIntel', '⌘⏎'],
+  ['Linux x86_64', 'Ctrl⏎'],
+];
+
+// In-page, before the page's own script: navigator.platform says `platform`.
+function onPlatform(platform) {
+  Object.defineProperty(Navigator.prototype, 'platform', { get: () => platform });
+}
+
+// In-page: the composer's shown buttons, the model it shows, and whether the buttons share the model picker's line.
+function composerRow() {
+  const pick = document.querySelector('.pick').getBoundingClientRect();
+  const actions = document.querySelector('.ask-actions').getBoundingClientRect();
+  return {
+    buttons: [...document.querySelectorAll('.ask-actions button')].filter((el) => !el.hidden).map((el) => el.textContent),
+    model: document.getElementById('model-pick').selectedOptions[0].textContent,
+    oneLine: actions.top < pick.bottom && pick.top < actions.bottom,
+  };
+}
+
+// The composer's widest row, at the chat's default width: the default model, then stop while the run's end is held back.
+async function liveComposerOnOneLine(url) {
+  for (const [platform, keys] of PLATFORM_KEYS) {
+    const before = async (page) => {
+      await page.addInitScript(onPlatform, platform);
+      await page.addInitScript(holdFrom, 'run_finished');
+    };
+    await withPage('live', { url, sample: false, memos: true, before }, async (page) => {
+      await page.click('#run-btn');
+      const answered = await becomes(page, lastTurnSays, [SCRIPTED_ANSWER], LIVE_RUN_MS);
+      const going = await page.evaluate(composerRow);
+      await page.evaluate(() => (window.release = true));
+      const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
+      const after = await page.evaluate(composerRow);
+      const offered = [`follow-up ${keys}`, 'ⓘ', 'ask ⏎'];
+      const onOneLine = (row, buttons) => isDeepStrictEqual(row, { buttons, model: DEFAULT_MODEL, oneLine: true });
+      const { side } = await page.evaluate(sideWidths);
+      const name = `at the default chat width, once an answer lands, the composer's buttons share one line with the model picker, with stop showing and after it goes: follow-up ${keys}`;
+      check('live', name, answered && done && onOneLine(going, ['stop', ...offered]) && onOneLine(after, offered), `${side} px; ${JSON.stringify({ going, after })}`);
+    });
+  }
+}
+
 // Leaves an ask hanging on its server.
 async function liveAskGoing(url) {
   await withPage('live', { url, sample: false, memos: true }, async (page) => {
@@ -9990,6 +10045,7 @@ async function live() {
     await liveAskAfterFailed(url);
     await liveTabs(url);
     await liveWhileGoing(url);
+    await liveComposerOnOneLine(url);
     await liveParts(url);
     await liveSkippedParts(url);
     await liveSkipInFolder(url);
