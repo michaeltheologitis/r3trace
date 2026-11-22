@@ -4,9 +4,9 @@ An answer alone does not say which of its sentences rests on what, so one more c
 to reasoning's model with its params, is shown the question, the answer, and the
 evidence on the answer's trail, each piece under an id. It copies out the answer's
 claims, each sentence, list item or table row, with the ids of the evidence that
-supports each, and each claim is then found in the answer. The evidence is the trail's
-quotes at the ``"sentence"`` evidence level, and at ``"document"`` each trail
-document's round-1 relevance summary, the one written from that document alone.
+supports each, and each claim is then found in the answer. The evidence is the relevant
+trail's quotes at the ``"sentence"`` evidence level, and at ``"document"`` each of its
+documents' round-1 relevance summary, the one written from that document alone.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from pydantic import BaseModel, create_model
 from r3con.config import EvidenceLevel, PromptStage
 from r3con.logging_setup import get_logger
 from r3con.prompts import load_prompt
-from r3con.provenance import Claim, NamedQuote, Provenance, QuotePlace
+from r3con.provenance import Claim, NamedQuote, QuotePlace, RelevantTrail
 from r3con.quotes import locate_quotes
 from r3con.runs import StageRun
 from r3con.runtime.llm import error_line, schema_as_sent, send_until_valid
@@ -56,7 +56,9 @@ class _Piece(NamedTuple):
 class _Level(NamedTuple):
     """What varies by evidence level: the evidence, how it is shown, and its ids."""
 
-    evidence: Callable[[Provenance, RelevantContext, Sequence[str]], dict[str, _Piece]]
+    evidence: Callable[
+        [RelevantTrail, RelevantContext, Sequence[str]], dict[str, _Piece]
+    ]
     tag: str
     heading: str
     ids_key: str
@@ -66,7 +68,7 @@ def find_claims(
     *,
     question: str,
     answer: str,
-    provenance: Provenance,
+    relevant_trail: RelevantTrail,
     relevance: RelevantContext,
     document_ids: Sequence[str],
     evidence_level: EvidenceLevel,
@@ -77,13 +79,14 @@ def find_claims(
     run: StageRun | None = None,
     **llm_kwargs: Any,
 ) -> list[Claim]:
-    """The claims ``answer`` makes, each with the evidence that supports it, in the
-    answer's order. It never fails the run: with no evidence to show, a request over
-    the model's line, or a call that fails or is cancelled, there are none."""
+    """The claims ``answer`` makes, each with the evidence on its ``relevant_trail``
+    that supports it, in the answer's order. It never fails the run: with no evidence
+    to show, a request over the model's line, or a call that fails or is cancelled,
+    there are none."""
     level = _LEVELS[evidence_level]
-    evidence = level.evidence(provenance, relevance, document_ids)
+    evidence = level.evidence(relevant_trail, relevance, document_ids)
     if not evidence:
-        _log.info("claims: the answer's trail holds no evidence, so no call")
+        _log.info("claims: the answer's relevant trail holds no evidence, so no call")
         return []
     system_prompt = load_prompt(
         "claims", version=prompts["claims"], evidence_level=evidence_level
@@ -132,7 +135,7 @@ def find_claims(
 
 
 def _quotes(
-    provenance: Provenance, _relevance: RelevantContext, _ids: Sequence[str]
+    trail: RelevantTrail, _relevance: RelevantContext, _ids: Sequence[str]
 ) -> dict[str, _Piece]:
     """The trail's quotes, as ``q1``, ``q2``, … in order."""
     return {
@@ -143,7 +146,7 @@ def _quotes(
                 document=quote["document"], start=quote["start"], end=quote["end"]
             ),
         )
-        for n, quote in enumerate(provenance["quotes"], start=1)
+        for n, quote in enumerate(trail["quotes"], start=1)
     }
 
 
@@ -155,12 +158,12 @@ def _quote_text(quote: NamedQuote) -> str:
 
 
 def _summaries(
-    provenance: Provenance, relevance: RelevantContext, document_ids: Sequence[str]
+    trail: RelevantTrail, relevance: RelevantContext, document_ids: Sequence[str]
 ) -> dict[str, _Piece]:
     """Each trail document's summaries (:func:`_shown_summaries`), in order."""
     index = {id_: doc for doc, id_ in enumerate(document_ids)}
     pieces: dict[str, _Piece] = {}
-    for document in provenance["documents"]:
+    for document in trail["documents"]:
         id_ = document["document"]
         notes = _shown_summaries(relevance.records, index[id_])
         pieces |= {part: _Piece(note, id_, None) for part, note in notes.items()}

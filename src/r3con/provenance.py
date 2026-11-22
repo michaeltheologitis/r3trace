@@ -27,16 +27,18 @@ What a call was shown but did not cite is no edge.
 
 A rule (:data:`RULES`) names the kinds of edge a walk follows. :func:`walk` goes
 breadth-first from the answer along them, and returns the trail: what it reached and
-the edges it followed. :func:`build_provenance` gives an answer's whole provenance:
-its citations, the trail under a rule, the documents the trail reaches, and the quotes
-the trail's ``summarizes`` edges carry. A run builds it under :data:`DEFAULT_RULE`
+the edges it followed. :func:`build_provenance` gives an answer's provenance before its
+claims, its relevant trail (:class:`RelevantTrail`): its citations, the trail under a
+rule, the documents the trail reaches, and the quotes the trail's ``summarizes`` edges
+carry. A run builds it under :data:`DEFAULT_RULE`
 (:attr:`r3con.pipeline.Answer.provenance`); :func:`r3con.trace` builds it again from a
 saved run's folder, under any rule.
 
-An answer's provenance adds its ``claims`` (:class:`AnswerProvenance`), which a last
-model call finds after reasoning (:mod:`r3con.stages.claims`). A claim names its quotes
-by their place, the same under any rule, so it finds them among the ``quotes`` of a
-trail under any rule.
+An answer's whole provenance (:class:`AnswerProvenance`, :func:`with_claims`) adds its
+``claims``, which a last model call finds after reasoning (:mod:`r3con.stages.claims`),
+and its evidence trail, the part of the relevant trail they rest on
+(:func:`evidence_trail`). A claim names its quotes by their place, the same under any
+rule, so it finds them among the ``quotes`` of a relevant trail under any rule.
 """
 
 from __future__ import annotations
@@ -45,7 +47,7 @@ from collections import deque
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import chain
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from r3con.quotes import TIERS, Match, Quote
 from r3con.stages.relevance import RelevantContext
@@ -117,14 +119,21 @@ class Trail(TypedDict):
     edges: list[Edge]
 
 
-class Provenance(Citations):
-    """An answer's provenance: its citations, ``{summary_ids, parse_ids}``, the
-    ``documents`` behind it, those its trail reaches, in document order, the ``quotes``
-    behind it, those its trail's ``summarizes`` edges carry, and its ``trail``."""
+class RelevantTrail(Trail):
+    """An answer's relevant trail: its citations, ``cited``, ``{summary_ids,
+    parse_ids}``; its trail, ``rule``, ``nodes`` and ``edges``; the ``documents``
+    behind it, those its trail reaches, in document order; and the ``quotes`` behind
+    it, those its trail's ``summarizes`` edges carry."""
 
+    cited: Citations
     documents: list[NamedDocument]
     quotes: list[NamedQuote]
-    trail: Trail
+
+
+class Provenance(TypedDict):
+    """An answer's provenance before its claims: its ``relevant_trail``."""
+
+    relevant_trail: RelevantTrail
 
 
 class QuotePlace(TypedDict):
@@ -140,8 +149,8 @@ class Claim(TypedDict):
     """A claim the answer makes, ``{text, start, end, documents, quotes}``: one of its
     sentences, list items or table rows, ``text``, which is ``answer[start:end]``; the
     ids of the documents whose evidence supports it, in document order; and the quotes
-    that support it, by place, in the order of ``quotes``, none at the document
-    evidence level."""
+    that support it, by place, in the order of the relevant trail's ``quotes``, none
+    at the document evidence level."""
 
     text: str
     start: int
@@ -150,10 +159,26 @@ class Claim(TypedDict):
     quotes: list[QuotePlace]
 
 
+EvidenceTrail = TypedDict(
+    "EvidenceTrail",
+    {
+        "from": Literal["claims", "trail"],
+        "documents": list[NamedDocument],
+        "quotes": list[NamedQuote],
+    },
+)
+"""The part of an answer's relevant trail its claims rest on, ``{from, documents,
+quotes}``, as :func:`evidence_trail` gives it: ``from`` is ``"claims"`` when its
+claims chose them, and ``"trail"`` when, no claim naming a document, they are the
+whole relevant trail's."""
+
+
 class AnswerProvenance(Provenance):
-    """An answer's provenance with its ``claims``, in the order of the answer."""
+    """An answer's provenance with its ``claims``, in the order of the answer, and its
+    ``evidence_trail``."""
 
     claims: list[Claim]
+    evidence_trail: EvidenceTrail
 
 
 @dataclass(frozen=True)
@@ -180,8 +205,8 @@ def build_provenance(
     names: Mapping[str, str],
     rule: str = DEFAULT_RULE,
 ) -> Provenance:
-    """The provenance of an answer that cites ``citations``, its trail walked under
-    ``rule`` over its graph (:func:`build_graph`).
+    """The provenance of an answer that cites ``citations``, before its claims: its
+    relevant trail, walked under ``rule`` over its graph (:func:`build_graph`).
 
     Its documents are those the trail reaches, in document order, each with its name.
     Its quotes are those the trail's ``summarizes`` edges carry, each place once, as
@@ -199,12 +224,52 @@ def build_provenance(
         names=names,
     )
     trail = walk(graph, rule)
-    return Provenance(
-        summary_ids=citations["summary_ids"],
-        parse_ids=citations["parse_ids"],
+    relevant = RelevantTrail(
+        cited=Citations(
+            summary_ids=citations["summary_ids"], parse_ids=citations["parse_ids"]
+        ),
+        rule=trail["rule"],
+        nodes=trail["nodes"],
+        edges=trail["edges"],
         documents=_documents(trail, names),
         quotes=_quotes(graph, trail),
-        trail=trail,
+    )
+    return Provenance(relevant_trail=relevant)
+
+
+def with_claims(provenance: Provenance, claims: list[Claim]) -> AnswerProvenance:
+    """``provenance`` with the answer's ``claims`` and the evidence trail they make
+    (:func:`evidence_trail`)."""
+    relevant = provenance["relevant_trail"]
+    return AnswerProvenance(
+        relevant_trail=relevant,
+        claims=claims,
+        evidence_trail=evidence_trail(relevant, claims),
+    )
+
+
+def evidence_trail(relevant: RelevantTrail, claims: Sequence[Claim]) -> EvidenceTrail:
+    """The part of ``relevant`` that ``claims`` rest on: each of its quotes whose
+    place a claim cites, once, and each of its documents a claim names, both in its
+    order. When no claim names a document, as when there are none, it is the whole
+    of ``relevant``'s documents and quotes."""
+    named = {id_ for claim in claims for id_ in claim["documents"]}
+    cited = {_place(quote) for claim in claims for quote in claim["quotes"]}
+    whole = not named
+    return EvidenceTrail(
+        {
+            "from": "trail" if whole else "claims",
+            "documents": [
+                document.copy()
+                for document in relevant["documents"]
+                if whole or document["document"] in named
+            ],
+            "quotes": [
+                quote.copy()
+                for quote in relevant["quotes"]
+                if whole or _place(quote) in cited
+            ],
+        }
     )
 
 
@@ -328,6 +393,11 @@ def _documents(trail: Trail, names: Mapping[str, str]) -> list[NamedDocument]:
     ]
 
 
+def _place(quote: NamedQuote | QuotePlace) -> tuple[str, int, int]:
+    """Where ``quote`` is: its document's id, its start and its end."""
+    return quote["document"], quote["start"], quote["end"]
+
+
 def _rank(quote: NamedQuote) -> tuple[int, float]:
     """How well ``quote`` was matched, the best lowest: its tier, in the order
     :func:`r3con.quotes.locate_quotes` tries them, then a fuzzy one's score."""
@@ -343,6 +413,6 @@ def _quotes(graph: Graph, trail: Trail) -> list[NamedQuote]:
     )
     by_place: dict[tuple[str, int, int], NamedQuote] = {}
     for quote in sorted(carried, key=_rank):
-        by_place.setdefault((quote["document"], quote["start"], quote["end"]), quote)
+        by_place.setdefault(_place(quote), quote)
     order = {id_: i for i, id_ in enumerate(graph.documents)}
     return sorted(by_place.values(), key=lambda q: (order[q["document"]], q["start"]))

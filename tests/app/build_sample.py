@@ -24,15 +24,17 @@ unedited from the ``logs/`` r3con wrote it to:
   run's own ``run_finished``, before them, leaves out their cost.
 
 Building calls no model: each document's name, text and size come from
-``examples/memos``, each answer's provenance is ``r3con.trace``'s for its folder, each
-quote's ``document_text``, which the run predates, its memo's words from ``start`` to
-``end``, and every other value is read from the folder as it is. Each quote names the
-summary it is from, so the app can match it to the trail. A note or parse r3con
-skipped, which this run predates, says so as the app's live run has it, and a call's
-resends count in its node. Every document in this run was read whole, and this handles
-only that. A sample with a document read in parts would need part handling: joining its
-parts' summaries as the app does, counting its ``<id>.<k>`` summaries as the document,
-and fitting its several calls into the page's one call per node.
+``examples/memos``, each answer's provenance is ``r3con.trace``'s for its folder, in
+the shape r3context 0.6.45 gave it, which the app reads as it reads today's
+(:func:`as_r3context_0_6_45_gave_it`), each quote's ``document_text``, which the run
+predates, its memo's words from ``start`` to ``end``, and every other value is read
+from the folder as it is. Each quote names the summary it is from, so the app can
+match it to the trail. A note or parse r3con skipped, which this run predates, says so
+as the app's live run has it, and a call's resends count in its node. Every document
+in this run was read whole, and this handles only that. A sample with a document read
+in parts would need part handling: joining its parts' summaries as the app does,
+counting its ``<id>.<k>`` summaries as the document, and fitting its several calls
+into the page's one call per node.
 
 To record a new sample, run and ask as above, put the new run folder where this one is,
 keeping its name (``r3con.trace`` finds an ask's run by it), set ``RUN_FOLDER``, and run
@@ -47,6 +49,7 @@ os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 import json
 import re
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -61,6 +64,8 @@ APP_JS = REPO / "src" / "r3con" / "app" / "app.js"
 SAMPLE_ROUNDS = 2
 # What the page reads of each quote: its text, and where it is in its document, in code points.
 QUOTE_FIELDS = ("text", "start", "end")
+# The keys of a relevant trail that hold its walk.
+WALK = ("rule", "nodes", "edges")
 # A note's or a parse's call kind's suffix on its resends, as calls.json records them.
 RESEND = re.compile(r"-retry-\d+$")
 
@@ -76,23 +81,66 @@ def memo_texts(run: Path, memos: Path) -> dict[str, str]:
     return {id_: files[i].read_text(encoding="utf-8") for id_, i in ids.items()}
 
 
+def as_r3context_0_6_45_gave_it(traced: Mapping[str, Any]) -> dict[str, Any]:
+    """A provenance r3con.trace gives, as r3context 0.6.45 gave it: ``{summary_ids,
+    parse_ids, documents, quotes, trail, claims}``."""
+    relevant = traced["relevant_trail"]
+    return {
+        **relevant["cited"],
+        "documents": relevant["documents"],
+        "quotes": relevant["quotes"],
+        "trail": {key: relevant[key] for key in WALK},
+        "claims": traced["claims"],
+    }
+
+
+def with_document_texts(
+    traced: Mapping[str, Any], texts: dict[str, str]
+) -> dict[str, Any]:
+    """``traced``, a provenance r3con.trace gives, each quote's document_text read from
+    its document's text in ``texts``."""
+
+    def filled(trail: Mapping[str, Any]) -> dict[str, Any]:
+        quotes = [
+            {**q, "document_text": texts[q["document"]][q["start"] : q["end"]]}
+            for q in trail["quotes"]
+        ]
+        return {**trail, "quotes": quotes}
+
+    return {
+        **traced,
+        "relevant_trail": filled(traced["relevant_trail"]),
+        "evidence_trail": filled(traced["evidence_trail"]),
+    }
+
+
 def provenance(
     folder: Path, saved: dict[str, Any], texts: dict[str, str]
 ) -> dict[str, Any]:
-    """The provenance of the answer saved in ``folder``, as r3con.trace gives it, each
-    quote's document_text read from its document's text in ``texts``. Before 0.6.5,
-    r3con saved only its citations; it saves its quotes since, its trail since 0.6.9,
-    and its documents since 0.6.33. The recorded run predates document_text, which
-    trace then gives as None."""
+    """The provenance of the answer saved in ``folder``, as r3con.trace gives it, in
+    the shape of r3context 0.6.45 (:func:`as_r3context_0_6_45_gave_it`), each quote's
+    document_text read from its document's text in ``texts``. Before 0.6.5, r3con saved
+    only its citations; it saves its quotes since, its trail since 0.6.9, its documents
+    since 0.6.33, and all of them under its relevant trail after 0.6.45. The recorded
+    run predates document_text, which trace then gives as None."""
     traced = r3con.trace(folder)
-    assert saved.items() <= traced.items(), (
+    earlier = as_r3context_0_6_45_gave_it(traced)
+    assert saved.items() <= traced.items() or saved.items() <= earlier.items(), (
         f"{folder.name}: trace gives the saved provenance"
     )
-    quotes = [
-        {**q, "document_text": texts[q["document"]][q["start"] : q["end"]]}
-        for q in traced["quotes"]
-    ]
-    return {**traced, "quotes": quotes}
+    return as_r3context_0_6_45_gave_it(with_document_texts(traced, texts))
+
+
+def todays_provenances() -> dict[str, Any]:
+    """The provenance of the sample run's answer and of each of its asks, oldest first,
+    as r3con.trace gives it, each quote's document_text filled in as for SAMPLE and
+    RECORDED_ASKS: what check.mjs puts in their place to see the page look the same."""
+    texts = memo_texts(RUN_FOLDER, MEMOS)
+    asks = sorted((RUN_FOLDER / "asks").iterdir())
+    return {
+        "answer": with_document_texts(r3con.trace(RUN_FOLDER), texts),
+        "asks": [with_document_texts(r3con.trace(ask), texts) for ask in asks],
+    }
 
 
 def summary(snippet: dict[str, Any], ids: dict[str, int]) -> dict[str, Any]:

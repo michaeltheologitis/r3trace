@@ -1034,14 +1034,16 @@ function recordEvents() {
   };
 }
 
-// Each answer in window.events, in the order they landed: its provenance, and the document ids of the run started
-// last before it, which in these checks is the run it answers over.
+// Each answer in window.events, in the order they landed: its relevant trail's citations, documents, quotes and trail,
+// and the document ids of the run started last before it, which in these checks is the run it answers over.
 function answersRead() {
   let ids = null;
   const read = [];
   for (const event of window.events) {
     if (event.type === 'run_started') ids = event.document_ids;
-    if (event.type === 'reasoning_finished') read.push({ ids, ...event.provenance });
+    if (event.type !== 'reasoning_finished') continue;
+    const { cited, documents, quotes, rule, nodes, edges } = event.provenance.relevant_trail;
+    read.push({ ids, ...cited, documents, quotes, trail: { rule, nodes, edges } });
   }
   return read;
 }
@@ -2103,6 +2105,35 @@ async function folderQuotes() {
     const relitName = "lighting another answer counts its quotes on a closed folder's pill: a follow-up's, which leaves out a file, then the run's answer's again";
     check('folders', relitName, isDeepStrictEqual(asked, sitesPill(pills[1] + pills[2], 2)) && isDeepStrictEqual(relit, sitesPill(pills[0] + pills[1] + pills[2], 3)), JSON.stringify({ asked, relit }));
   });
+}
+
+// r3con.trace's provenance of the sample's answer and of each recorded ask, as r3con gives it today (build_sample.py).
+const TODAYS_PROVENANCES = 'import json; from tests.app.build_sample import todays_provenances; print(json.dumps(todays_provenances()))';
+
+// app.js with the provenance of its SAMPLE's answer and of each of its RECORDED_ASKS as r3con gives it today, in place
+// of r3context 0.6.45's, which they hold.
+function withTodaysProvenance(script) {
+  const today = JSON.parse(execFileSync('uv', ['run', 'python', '-c', TODAYS_PROVENANCES], { cwd: REPO_DIR, encoding: 'utf8' }));
+  const asks = recordedAsks().map((ask, i) => ({ ...ask, provenance: today.asks[i] }));
+  const sampled = withSample((sample) => ({ ...sample, answer: { ...sample.answer, provenance: today.answer } }))(script);
+  return sampled.replace(/const RECORDED_ASKS = \[[\s\S]*?\n\];/, () => `const RECORDED_ASKS = ${JSON.stringify(asks)};`);
+}
+
+// What the page shows of the sample's answer, then of its first recorded follow-up: the lit trail, the answer's popup
+// and folds, the pills, the linked sentences, and the path the first one lights.
+async function provenanceShown(page) {
+  const shown = async (id) => ({ lit: await litOnPanel(page), popup: await inspect(page, id), folds: await page.evaluate(foldsIn), pills: await page.evaluate(pillsOn), claims: await page.evaluate(claimsShown) });
+  const answer = { ...(await shown('answer-0')), claim: await hoverClaim(page) };
+  await followUp(page, recordedAsks()[0].question);
+  const landed = await becomes(page, landedNode, 'answer-1');
+  return { answer, landed, ask: await shown('answer-1') };
+}
+
+async function earlierProvenance() {
+  const [earlier, today] = await shippedAndEdited('sample replay', {}, withTodaysProvenance, provenanceShown);
+  const name = "r3con's provenance as it gives it today opens as r3context 0.6.45's does: the same trail, popups, pills, sentences and a sentence's path, for the answer and a follow-up";
+  const drawn = Boolean(earlier?.landed && earlier.answer.lit.edges.length && earlier.answer.claims.length && earlier.answer.claim.hovered.lit);
+  check('sample replay', name, drawn && isDeepStrictEqual(today, earlier), JSON.stringify({ earlier: earlier?.answer.lit.edges.length, today: today?.answer.lit.edges.length }));
 }
 
 async function sampleReplay() {
@@ -7719,7 +7750,7 @@ async function liveQuotes(url) {
 }
 
 // In-page: how many of the events streamed carry quotes, a relevance summary's or an answer's.
-const quotingEvents = () => window.events.filter((e) => (e.quotes ?? e.provenance?.quotes ?? []).length > 0).length;
+const quotingEvents = () => window.events.filter((e) => (e.quotes ?? e.provenance?.relevant_trail?.quotes ?? []).length > 0).length;
 
 // With document level chosen, r3con quotes nothing, yet the files list still dims only the documents off the answer's
 // trail.
@@ -10095,7 +10126,7 @@ async function live() {
 try {
   documents = writeDocuments(DOCUMENT_SPECS);
   browser = await require('playwright').chromium.launch();
-  const areas = [load, beforeRun, folds, folders, folderQuotes, sampleReplay, chatLog, arrange, runView, filesNotText, filesAddFails, removeArea, trashArea, removeAllArea, answers, followUps, tabs, tabFiles, dropArea, stopArea, settings, popupArea, popupWords, popupHuge, quotesArea, claimsArea, skipsArea, gestures, scale, chatWidthArea, prototypeSaves, prototypeImports, live];
+  const areas = [load, beforeRun, folds, folders, folderQuotes, sampleReplay, earlierProvenance, chatLog, arrange, runView, filesNotText, filesAddFails, removeArea, trashArea, removeAllArea, answers, followUps, tabs, tabFiles, dropArea, stopArea, settings, popupArea, popupWords, popupHuge, quotesArea, claimsArea, skipsArea, gestures, scale, chatWidthArea, prototypeSaves, prototypeImports, live];
   for (const area of areas) await area();
 } catch (error) {
   check('setup', firstLine(error), false);

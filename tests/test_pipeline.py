@@ -32,9 +32,12 @@ from tests.fakes import (
     MERROW_CUT_OFF,
     TWO_LINE_MEMOS,
     Raw,
+    as_saved_before_claims,
     citable_lists,
     citing,
     first_line,
+    from_claims,
+    from_trail,
     is_later_round,
     memo_line,
     named_documents,
@@ -469,16 +472,19 @@ def test_the_answer_its_event_and_the_run_folder_quote_the_answers_trail(
         "documents": ids,
         "quotes": [{k: q[k] for k in ("document", "start", "end")} for q in quotes],
     }
+    documents = named_documents(result, 0, 1, 2)
     # 0's summary cites 1's round 1; 2's parse cites its own, which cites 0's round 1.
     assert without_trail(result.provenance) == {
-        "summary_ids": [ids[0]],
-        "parse_ids": [ids[2]],
-        "documents": named_documents(result, 0, 1, 2),
-        "quotes": quotes,
+        "relevant_trail": {
+            "cited": {"summary_ids": [ids[0]], "parse_ids": [ids[2]]},
+            "documents": documents,
+            "quotes": quotes,
+        },
         "claims": [claim],
+        "evidence_trail": from_claims(documents, quotes),
     }
     saved = read_json(logger, "reasoning/result")["provenance"]
-    assert {**saved, "claims": [claim]} == result.provenance
+    assert saved == as_saved_before_claims(result.provenance)
     [finished] = [e for e in events if e["type"] == "reasoning_finished"]
     assert finished["provenance"] == saved
 
@@ -503,12 +509,15 @@ def test_a_document_level_run_quotes_nothing_and_names_the_documents_its_trail_r
     ids = result.document_ids
     # 0's summary cites 1's round 1; 2's parse cites its own, which cites 0's round 1.
     claim = {"text": "Halloran memo", "start": 0, "end": 13, "documents": ids}
+    documents = named_documents(result, 0, 1, 2)
     assert without_trail(result.provenance) == {
-        "summary_ids": [ids[0]],
-        "parse_ids": [ids[2]],
-        "documents": named_documents(result, 0, 1, 2),
-        "quotes": [],
+        "relevant_trail": {
+            "cited": {"summary_ids": [ids[0]], "parse_ids": [ids[2]]},
+            "documents": documents,
+            "quotes": [],
+        },
         "claims": [{**claim, "quotes": []}],
+        "evidence_trail": from_claims(documents, []),
     }
     snippets = [
         snippet
@@ -533,9 +542,10 @@ def test_documents_named_by_anything_but_strings_are_refused_before_anything(
 def test_a_cited_parse_that_cites_no_snippet_adds_no_quotes(answering_llm, shown_ids):
     llm = answering_llm.answers(relevance=quoting_a_line_a_round(shown_ids))
     result = answer(llm, documents=TWO_LINE_MEMOS)
-    assert result.provenance["parse_ids"] == result.document_ids
+    trail = result.provenance["relevant_trail"]
+    assert trail["cited"]["parse_ids"] == result.document_ids
     assert result.parsing_provenance == [[], [], []]
-    assert result.provenance["quotes"] == []
+    assert trail["quotes"] == []
 
 
 @pytest.mark.parametrize(
@@ -554,14 +564,16 @@ def test_a_config_that_pins_reasoning_v2_still_answers(
     assert "- `provenance`: The IDs of the documents above" in prompt
     parse_ids = result.document_ids if cites_the_parse else []
     assert without_trail(result.provenance) == {
-        "summary_ids": [],
-        "parse_ids": parse_ids,
-        "documents": [],
-        "quotes": [],
+        "relevant_trail": {
+            "cited": {"summary_ids": [], "parse_ids": parse_ids},
+            "documents": [],
+            "quotes": [],
+        },
         "claims": [],
+        "evidence_trail": from_trail([], []),
     }
     saved = read_json(logger, "reasoning/result")["provenance"]
-    assert {**saved, "claims": []} == result.provenance
+    assert saved == as_saved_before_claims(result.provenance)
 
 
 def test_a_config_that_pins_parsing_v1_still_runs(answering_llm, tmp_path):
@@ -645,20 +657,26 @@ def test_the_default_config_answers_in_one_call_over_the_whole_stamped_parse(
     system, user = request["messages"]
     shows_the_notes_and_the_stamped_parse(system, "direct", ids)
     assert user == {"role": "user", "content": "Input:\n<task>\nWho?\n</task>"}
+    documents = named_documents(result, 0)
     cited = {
-        "summary_ids": [ids[0]],
-        "parse_ids": [ids[1]],
-        "documents": named_documents(result, 0),
-        "quotes": [],
+        "relevant_trail": {
+            "cited": {"summary_ids": [ids[0]], "parse_ids": [ids[1]]},
+            "documents": documents,
+            "quotes": [],
+        },
         "claims": [],
+        "evidence_trail": from_trail(documents, []),
     }
     assert (result.answer, without_trail(result.provenance)) == (
         "Halloran and Merrow.",
         cited,
     )
     reasoning = read_json(logger, "reasoning/result")
-    saved = {**reasoning["provenance"], "claims": []}
-    assert (reasoning["answer"], saved) == ("Halloran and Merrow.", result.provenance)
+    saved = as_saved_before_claims(result.provenance)
+    assert (reasoning["answer"], reasoning["provenance"]) == (
+        "Halloran and Merrow.",
+        saved,
+    )
     assert (reasoning["path"], reasoning["fallback"]) == ("direct", None)
     assert reasoning["totals"]["n_steps"] == 1
     transcript = yaml.safe_load((logger.dir / "reasoning/transcript.yaml").read_text())
@@ -679,13 +697,15 @@ def test_the_coding_path_sends_the_coding_prompt_over_the_whole_stamped_parse(
     assert user == {"role": "user", "content": "Input:\n<task>\nWho?\n</task>"}
     assert ast.literal_eval(result.answer) == stamped(ids)
     assert without_trail(result.provenance) == {
-        "summary_ids": [],
-        "parse_ids": [],
-        "documents": [],
-        "quotes": [],
+        "relevant_trail": {
+            "cited": {"summary_ids": [], "parse_ids": []},
+            "documents": [],
+            "quotes": [],
+        },
         "claims": [],
+        "evidence_trail": from_trail([], []),
     }
-    assert result.provenance["trail"]["nodes"] == ["answer"]
+    assert result.provenance["relevant_trail"]["nodes"] == ["answer"]
     reasoning = read_json(logger, "reasoning/result")
     assert (reasoning["path"], reasoning["fallback"]) == ("coding", None)
     assert (reasoning["terminated_by"], reasoning["n_turns"]) == ("final_answer", 1)
@@ -946,10 +966,10 @@ def test_a_pruned_documents_round_1_note_cited_in_round_2_still_leads_the_trail_
     logger = TaskLogger("run", root=tmp_path)
     result = answer(llm, logger, documents=TWO_LINE_MEMOS)
     halloran, merrow, _ = result.document_ids
-    trail = result.provenance["trail"]
+    trail = result.provenance["relevant_trail"]
     assert [f"summary:2:{merrow}", f"summary:1:{halloran}", "cites"] in trail["edges"]
     assert f"document:{halloran}" in trail["nodes"]
-    assert memo_line(result.document_ids, 0, 0) in result.provenance["quotes"]
+    assert memo_line(result.document_ids, 0, 0) in trail["quotes"]
     assert read_answer(logger.dir, DEFAULT_RULE) == result.provenance
 
 
@@ -1036,12 +1056,12 @@ def test_with_every_memo_pruned_the_answer_cites_round_1s_notes_back_to_each_mem
 ):
     _, logger, result, _ = pruned_everything
     ids = result.document_ids
-    assert result.provenance["summary_ids"] == ids
-    edges = result.provenance["trail"]["edges"]
+    trail = result.provenance["relevant_trail"]
+    assert trail["cited"]["summary_ids"] == ids
     for id_ in ids:
-        assert ["answer", f"summary:1:{id_}", "cites"] in edges
-        assert [f"summary:1:{id_}", f"document:{id_}", "summarizes"] in edges
-    assert result.provenance["quotes"] == [memo_line(ids, i, 0) for i in range(3)]
+        assert ["answer", f"summary:1:{id_}", "cites"] in trail["edges"]
+        assert [f"summary:1:{id_}", f"document:{id_}", "summarizes"] in trail["edges"]
+    assert trail["quotes"] == [memo_line(ids, i, 0) for i in range(3)]
     assert read_answer(logger.dir, DEFAULT_RULE) == result.provenance
 
 
@@ -1066,7 +1086,7 @@ def test_with_round_1_empty_too_an_all_pruned_run_answers_from_no_notes(
     nothing = "(no relevant summary for this task)"
     headed = [f"### Document ID: {id_}\n{nothing}" for id_ in result.document_ids]
     assert shown["## Document summaries"].endswith("\n\n".join(headed))
-    assert result.provenance["summary_ids"] == []
+    assert result.provenance["relevant_trail"]["cited"]["summary_ids"] == []
 
 
 def test_the_configs_params_are_in_every_request(answering_llm):
@@ -1365,11 +1385,11 @@ def test_a_last_round_note_skipped_keeps_its_earlier_one_and_the_trail_leads_the
         "provenance": [],
         "skipped": "output context length",
     }
-    trail = result.provenance["trail"]
+    trail = result.provenance["relevant_trail"]
     assert [ANSWER, f"summary:1:{ids[1]}", CITES] in trail["edges"]
     assert f"summary:2:{ids[1]}" not in trail["nodes"]
-    assert result.provenance["documents"] == named_documents(result, 0, 1, 2)
-    assert read_answer(logger.dir, DEFAULT_RULE)["trail"] == trail
+    assert trail["documents"] == named_documents(result, 0, 1, 2)
+    assert read_answer(logger.dir, DEFAULT_RULE)["relevant_trail"] == trail
 
 
 def test_with_one_round_a_skipped_note_leaves_no_note_and_the_memo_is_parsed(
@@ -1719,9 +1739,15 @@ def test_each_finished_event_carries_what_the_run_folder_records(
     assert by_type["reasoning_finished"] == [
         {f: reasoning[f] for f in ("answer", "provenance", "path", "fallback")}
     ]
-    claims = read_json(logger, "claims/result")["claims"]
-    assert claims == result.provenance["claims"]
-    assert by_type["claims_finished"] == [{"claims": claims}]
+    claimed = read_json(logger, "claims/result")
+    claims, evidence = claimed["claims"], claimed["evidence_trail"]
+    assert (claims, evidence) == (
+        result.provenance["claims"],
+        result.provenance["evidence_trail"],
+    )
+    assert by_type["claims_finished"] == [
+        {"claims": claims, "evidence_trail": evidence}
+    ]
     assert [claim["text"] for claim in claims] == ["Halloran memo"]
     # Each of the 12 calls, the claims call among them, costs $10.
     assert by_type["run_finished"] == [
@@ -1818,7 +1844,8 @@ def test_a_callback_that_changes_its_events_changes_nothing_in_the_run(
     result = answer(answering_llm, logger, on_event=clears_every_list_and_dict)
     assert result.answer == "Halloran memo; Merrow memo"
     assert len(result.document_ids) == 2
-    assert result.provenance["parse_ids"] == result.document_ids
+    cited = result.provenance["relevant_trail"]["cited"]
+    assert cited["parse_ids"] == result.document_ids
     assert events_in(logger.dir)[0]["document_ids"] == result.document_ids
 
 

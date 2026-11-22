@@ -21,8 +21,8 @@ Wires the three moves of the method — see :mod:`r3con.stages`:
    whose parsed records it used, by id.
 
 After reasoning, one more call finds the answer's **claims**, each with the evidence on
-its trail that supports it (:mod:`r3con.stages.claims`), unless the config turns
-claims off.
+its relevant trail that supports it (:mod:`r3con.stages.claims`), unless the config
+turns claims off.
 
 The document is the unit throughout: a document too long for the model's window is read
 in parts (:mod:`r3con.splitting`), and the whole collection is never placed in one
@@ -73,6 +73,7 @@ from r3con.provenance import (
     Provenance,
     build_provenance,
     check_rule,
+    with_claims,
 )
 from r3con.quotes import Match, Quote
 from r3con.runs import (
@@ -217,7 +218,7 @@ def _cites_nothing() -> AnswerProvenance:
         parsing_provenance=[],
         names={},
     )
-    return AnswerProvenance(**provenance, claims=[])
+    return with_claims(provenance, [])
 
 
 RELEVANCE_STAGE = "relevance"
@@ -271,27 +272,34 @@ class Answer:
     obvious thing.
 
     - ``answer`` — the answer text.
-    - ``provenance`` — what the answer used (:class:`~r3con.provenance.Provenance`).
-      ``provenance["summary_ids"]`` lists the ids of the relevance summaries of
+    - ``provenance`` — what the answer used
+      (:class:`~r3con.provenance.AnswerProvenance`): ``relevant_trail``, ``claims``
+      and ``evidence_trail``. ``provenance["relevant_trail"]`` is the answer's
+      citations traced back (:class:`~r3con.provenance.RelevantTrail`): ``cited``,
+      ``{summary_ids, parse_ids}``, the ids of the relevance summaries of
       ``relevant_context`` it used (``<id>.<k>`` for part ``k`` of a document read in
-      parts). ``provenance["parse_ids"]`` lists those of the documents whose records
-      in ``structured_context`` it used (an id can be in both).
-      ``provenance["trail"]`` is the answer's trail under the default rule
-      (:class:`~r3con.provenance.Trail`): the summaries and parses it cites, the
-      summaries they cite, round by round back, and the documents those summaries
-      summarize. ``provenance["documents"]`` lists the documents the trail reaches,
-      in document order, each by id and by name
-      (:class:`~r3con.provenance.NamedDocument`). ``provenance["quotes"]`` lists the
-      sentences behind the answer, those the trail's summaries are based on, each
-      naming its document by id and by name (:class:`~r3con.provenance.NamedQuote`);
-      a document-level run (``evidence_level="document"``) has none.
+      parts) and those of the documents whose records in ``structured_context`` it
+      used (an id can be in both); its trail under the default rule, ``rule``,
+      ``nodes`` and ``edges`` (:class:`~r3con.provenance.Trail`): the summaries and
+      parses it cites, the summaries they cite, round by round back, and the
+      documents those summaries summarize; the ``documents`` the trail reaches, in
+      document order, each by id and by name
+      (:class:`~r3con.provenance.NamedDocument`); and the ``quotes``, the sentences
+      behind the answer, those the trail's summaries are based on, each naming its
+      document by id and by name (:class:`~r3con.provenance.NamedQuote`), none in a
+      document-level run (``evidence_level="document"``).
       ``provenance["claims"]`` lists the claims the answer makes, each one of its
       sentences, list items or table rows, in the order it makes them: its ``text``,
       ``answer[start:end]``, the ids of the ``documents`` whose evidence supports it,
-      and the ``quotes`` that do, each by its ``{document, start, end}`` in
-      ``provenance["quotes"]``, none at the document level
+      and the ``quotes`` that do, each by its ``{document, start, end}`` among the
+      relevant trail's, none at the document level
       (:class:`~r3con.provenance.Claim`). It is empty when the config turns claims
       off, or when their call finds none (:func:`~r3con.stages.claims.find_claims`).
+      ``provenance["evidence_trail"]`` is the part of the relevant trail the claims
+      rest on (:func:`~r3con.provenance.evidence_trail`): ``from`` ``"claims"``, the
+      ``documents`` its claims name and the ``quotes`` they cite, in the relevant
+      trail's order; or, when no claim names a document, ``from`` ``"trail"`` and
+      all of the relevant trail's.
       :func:`r3con.trace` builds it again from the run folder, under any rule.
     - ``relevant_context`` — the **relevant context**: the relevance summary of each
       document in the round of
@@ -478,10 +486,12 @@ def _claims_stage(
     task_logger: TaskLogger | None,
     emit: Emit,
     resumed: bool = False,
-) -> tuple[list[Claim], StageRun | None]:
-    """The claims of ``answer`` and the stage run that found them, under ``claims/``."""
+) -> tuple[AnswerProvenance, StageRun | None]:
+    """``provenance`` with the claims of ``answer``
+    (:func:`r3con.provenance.with_claims`), and the stage run that found them, under
+    ``claims/``."""
     if not config.claims:
-        return [], None
+        return with_claims(provenance, []), None
     emit("claims_started")
     # No cancel here: a cancelled claims call leaves no claims, and the run finishes.
     with _recorded_stage(
@@ -496,7 +506,7 @@ def _claims_stage(
         claims = find_claims(
             question=task,
             answer=answer,
-            provenance=provenance,
+            relevant_trail=provenance["relevant_trail"],
             relevance=relevance,
             document_ids=document_ids,
             evidence_level=config.evidence_level,
@@ -507,9 +517,10 @@ def _claims_stage(
             run=record.run,
             **llm_kwargs,
         )
-        record.result = {"claims": claims}
-    emit("claims_finished", claims=claims)
-    return claims, record.run
+        answered = with_claims(provenance, claims)
+        record.result = {"claims": claims, "evidence_trail": answered["evidence_trail"]}
+    emit("claims_finished", claims=claims, evidence_trail=answered["evidence_trail"])
+    return answered, record.run
 
 
 def _preview(text: str, n: int = 100) -> str:
@@ -605,11 +616,11 @@ def run_pipeline(
       ``{part, reason}`` (``part`` as in ``relevance_finished``, ``reason`` as
       :attr:`Skip.reason`), none when none was.
     - ``reasoning_started``: ``question``, ``model``. ``reasoning_finished``:
-      ``answer``, ``provenance`` (``{summary_ids, parse_ids, documents, quotes,
-      trail}``, as :attr:`Answer.provenance` but for its claims), ``path``,
-      ``fallback``.
+      ``answer``, ``provenance`` (``{relevant_trail}``, as :attr:`Answer.provenance`
+      but for its claims and evidence trail), ``path``, ``fallback``.
     - ``claims_started`` / ``claims_finished``, unless the config turns claims off:
-      finished has ``claims``, as ``provenance["claims"]`` gives them.
+      finished has ``claims`` and ``evidence_trail``, as :attr:`Answer.provenance`
+      gives them.
     - ``run_finished``: ``run_dir`` as in ``run_started``, then the run's ``tokens``
       and ``usd``, as a stage's ``totals`` gives them (``None`` without a run folder).
     - ``run_failed``, when a stage raises, before the exception propagates: ``stage``
@@ -935,7 +946,7 @@ def _build_and_answer(
         record.result = _reasoning_record(result, provenance)
     stage_runs.append(record.run)
     emit("reasoning_finished", **_reasoning_outcome(result, provenance))
-    claims, claims_run = _claims_stage(
+    answered, claims_run = _claims_stage(
         result.answer,
         provenance,
         task=task,
@@ -956,8 +967,7 @@ def _build_and_answer(
     emit("run_finished", run_dir=run_dir, **_spent(stage_runs, saved.totals))
     return _answer(
         result,
-        provenance=provenance,
-        claims=claims,
+        provenance=answered,
         relevance=relevance,
         schema_code=proposal.schema_code,
         parsed=parsed,
@@ -1659,10 +1669,12 @@ def _provenance_over(built: Representation, citations: Citations) -> Provenance:
 
 def read_answer(folder: Path, rule: str) -> AnswerProvenance:
     """The provenance of the answer saved in the run folder or ask's folder ``folder``,
-    its trail walked under ``rule``, built from its citations and the summaries and
-    parses' citations of the run it answered over, with the claims ``folder`` saved,
-    none for a folder saved without them: only what :func:`r3con.trace` needs, so
-    neither the run's config nor its prompts are read.
+    its relevant trail walked under ``rule``, built from its citations
+    (:func:`_saved_citations`) and the summaries and parses' citations of the run it
+    answered over, with the claims ``folder`` saved, none for a folder saved without
+    them, and the evidence trail they make (:func:`r3con.provenance.with_claims`),
+    never read: only what :func:`r3con.trace` needs, so neither the run's config nor
+    its prompts are read.
 
     Raises:
         ValueError: if no rule is named ``rule``, before anything is read; or, in one
@@ -1693,12 +1705,15 @@ def read_answer(folder: Path, rule: str) -> AnswerProvenance:
             names=names,
             rule=rule,
         )
-    return AnswerProvenance(**provenance, claims=claims)
+    return with_claims(provenance, claims)
 
 
 def _saved_citations(result: Mapping[str, Any]) -> Citations:
-    """The citations of the answer reasoning's ``result.json``, ``result``, holds."""
-    cited = result["provenance"]
+    """The citations of the answer reasoning's ``result.json``, ``result``, holds: its
+    relevant trail's ``cited``, or, in one r3context 0.6.45 or earlier wrote, its
+    provenance's own ``summary_ids`` and ``parse_ids``."""
+    saved = result["provenance"]
+    cited = saved["relevant_trail"]["cited"] if "relevant_trail" in saved else saved
     return Citations(
         summary_ids=list(cited["summary_ids"]), parse_ids=list(cited["parse_ids"])
     )
@@ -1912,7 +1927,7 @@ def ask_pipeline(
         provenance = _provenance_over(built, result.citations)
         record.result = _reasoning_record(result, provenance)
     emit("reasoning_finished", **_reasoning_outcome(result, provenance))
-    claims, claims_run = _claims_stage(
+    answered, claims_run = _claims_stage(
         result.answer,
         provenance,
         task=task,
@@ -1928,8 +1943,7 @@ def ask_pipeline(
     emit("ask_finished", ask_dir=ask_dir, **_spent([record.run, claims_run]))
     return _answer(
         result,
-        provenance=provenance,
-        claims=claims,
+        provenance=answered,
         relevance=built.relevance,
         schema_code=built.schema_code,
         parsed=built.parsed,
@@ -2059,8 +2073,7 @@ def _reasoning_record(
 def _answer(
     result: reasoning.ReasoningResult,
     *,
-    provenance: Provenance,
-    claims: list[Claim],
+    provenance: AnswerProvenance,
     relevance: RelevantContext,
     schema_code: str,
     parsed: BaseModel | dict[str, Any],
@@ -2071,8 +2084,8 @@ def _answer(
     skipped: list[Skip],
 ) -> Answer:
     """The :class:`Answer` that reasoning's ``result`` makes, with its
-    ``provenance`` and ``claims``, over what it reasoned over, ``names`` giving each
-    document's name by its id, in document order, and what the run ``skipped``."""
+    ``provenance``, over what it reasoned over, ``names`` giving each document's name
+    by its id, in document order, and what the run ``skipped``."""
     return Answer(
         answer=result.answer,
         relevant_context=[join_parts(s) for s in relevance.snippets],
@@ -2087,7 +2100,7 @@ def _answer(
         run_dir=run_dir,
         document_ids=list(names),
         document_names=list(names.values()),
-        provenance=AnswerProvenance(**provenance, claims=claims),
+        provenance=provenance,
         relevance_provenance=relevance.provenance,
         parsing_provenance=parsing_provenance,
         skipped=skipped,

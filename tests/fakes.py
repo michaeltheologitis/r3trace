@@ -81,6 +81,8 @@ DIGITS_KEY = 123456789012345678
 KEYRING_FILE = "R3CON_TEST_KEYRING_FILE"
 # Below keyring's null store's, -1, and its failing one's, 0.
 BELOW_ANY_PICKED = -2
+# The keys of a relevant trail that hold its walk.
+WALK = ("rule", "nodes", "edges")
 
 
 class GatewayKey(BaseModel):
@@ -500,7 +502,8 @@ def citable_lists(request: Request) -> dict[str, Any]:
 def cited_documents(provenance: Mapping[str, Any]) -> set[str]:
     """The ids of the documents whose snippets or records an answer's ``provenance``
     cites."""
-    views = (provenance["summary_ids"], provenance["parse_ids"])
+    cited = provenance["relevant_trail"]["cited"]
+    views = (cited["summary_ids"], cited["parse_ids"])
     return {id_.partition(".")[0] for ids in views for id_ in ids}
 
 
@@ -526,9 +529,32 @@ def too_long(limit: int, size: int, model: str) -> ContextWindowExceededError:
 
 
 def without_trail(provenance: Mapping[str, Any]) -> dict[str, Any]:
-    """An answer's ``provenance`` without its ``trail``, which ``test_provenance.py``
-    pins."""
-    return {key: value for key, value in provenance.items() if key != "trail"}
+    """An answer's ``provenance`` without its relevant trail's walk, ``rule``,
+    ``nodes`` and ``edges``, which ``test_provenance.py`` pins."""
+    trail = provenance["relevant_trail"]
+    unwalked = {key: value for key, value in trail.items() if key not in WALK}
+    return {**provenance, "relevant_trail": unwalked}
+
+
+def as_saved_before_claims(provenance: Mapping[str, Any]) -> dict[str, Any]:
+    """An answer's ``provenance`` as reasoning's ``result.json`` saves it, and its
+    ``reasoning_finished`` event gives it: its relevant trail alone."""
+    return {"relevant_trail": provenance["relevant_trail"]}
+
+
+def from_claims(
+    documents: list[dict[str, str]], quotes: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """An evidence trail its claims chose: ``documents`` and ``quotes``."""
+    return {"from": "claims", "documents": documents, "quotes": quotes}
+
+
+def from_trail(
+    documents: list[dict[str, str]], quotes: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """An evidence trail that, no claim naming a document, is the relevant trail's
+    ``documents`` and ``quotes``."""
+    return {"from": "trail", "documents": documents, "quotes": quotes}
 
 
 def named_documents(answer: Answer, *indices: int) -> list[dict[str, str]]:

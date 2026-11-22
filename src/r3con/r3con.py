@@ -8,19 +8,20 @@ This is the whole surface most callers need::
     print(result)                 # the answer text
     result.relevant_context              # what each document was found to contribute
     result.structured_context            # the structured parse the answer was computed over
-    result.provenance             # the summaries, parses, documents, quotes, trail and claims behind it
+    result.provenance             # its relevant trail, its claims and its evidence trail
     result.schema_code            # the schema proposed for this question
 
-The answer cites its two views separately: the relevance summaries it used
-(``result.provenance["summary_ids"]``) and the documents whose parsed records it used
-(``result.provenance["parse_ids"]``). Each document's relevance summary and its parse
-also record the summaries they used (``result.relevance_provenance``,
-``result.parsing_provenance``). ``result.provenance["trail"]`` is what the answer
-reaches through those citations, ``result.provenance["documents"]`` the documents on
-that trail, each with its name, ``result.provenance["quotes"]`` the sentences
-behind it, the quotes on that trail, and ``result.provenance["claims"]`` each claim the
-answer makes, with the quotes or documents that support it
-(:attr:`~r3con.pipeline.Answer.provenance`, :mod:`r3con.provenance`).
+The answer cites its two views separately, the relevance summaries it used and the
+documents whose parsed records it used, as
+``result.provenance["relevant_trail"]["cited"]``, ``{summary_ids, parse_ids}``. Each
+document's relevance summary and its parse also record the summaries they used
+(``result.relevance_provenance``, ``result.parsing_provenance``).
+``result.provenance["relevant_trail"]`` is what the answer reaches through those
+citations, with the documents on that trail, each with its name, and the sentences
+behind it, the quotes on that trail; ``result.provenance["claims"]`` each claim the
+answer makes, with the quotes or documents that support it; and
+``result.provenance["evidence_trail"]`` the part of the relevant trail the claims rest
+on (:attr:`~r3con.pipeline.Answer.provenance`, :mod:`r3con.provenance`).
 
 (``from r3con import run`` works too — same function, imported from the package root.)
 
@@ -33,8 +34,8 @@ model.
 list of them. To read them off disk, :func:`read_documents` turns a folder, a glob or a
 list of files into ``{name: text}``, each named by its path — one job each, so nothing
 has to guess which you meant. ``result.document_names`` lines up with
-``result.document_ids``, and each quote in ``result.provenance["quotes"]`` names its
-document.
+``result.document_ids``, and each quote on ``result.provenance["relevant_trail"]``
+names its document.
 
 The pipeline itself lives in :mod:`r3con.pipeline`; this module only resolves inputs
 and hands back the answer. Reach for :func:`r3con.pipeline.run_pipeline` directly when
@@ -127,9 +128,8 @@ def run(
             prompt does not fit the model's window.
         evidence_level: overrides the config's: ``"sentence"`` has each relevance
             summary quote the sentences of its document it is based on;
-            ``"document"`` asks for no quotes, so ``result.provenance["quotes"]`` is
-            empty and ``result.provenance["documents"]`` names the documents the
-            trail ends at.
+            ``"document"`` asks for no quotes, so the relevant trail's ``quotes`` are
+            empty and its ``documents`` name the documents the trail ends at.
         claims: overrides the config's: whether one more call, after reasoning, finds
             the claims the answer makes, each with the quotes, or at the document
             level the documents, that support it, in
@@ -177,9 +177,10 @@ def run(
 
     Returns:
         An :class:`~r3con.pipeline.Answer`: the answer text (``.answer``, and
-        ``str()`` of the result), the ids of the relevance summaries and parsed records
-        it used, its trail and the documents and quotes on it, and its claims, each
-        with what supports it (``.provenance``: ids
+        ``str()`` of the result), its relevant trail, the ids of the relevance
+        summaries and parsed records it used traced back to the documents and quotes
+        they rest on, its claims, each with what supports it, and its evidence trail,
+        the part of the relevant trail the claims rest on (``.provenance``: ids
         from ``.document_ids``, a part's summary as ``<id>.<k>``, whose document is the
         part before the dot, each document and each quote with the document's name;
         see :attr:`~r3con.pipeline.Answer.provenance`), each document's name
@@ -433,10 +434,11 @@ def resume(
 
 
 def trace(source: Answer | str | Path, rule: str = DEFAULT_RULE) -> AnswerProvenance:
-    """The provenance of the answer ``source`` saved, its trail walked under ``rule``
-    (:mod:`r3con.provenance`), built from the files of its folder alone, with the
-    claims it saved: none for a folder saved without them, as before r3con made
-    claims.
+    """The provenance of the answer ``source`` saved, its relevant trail walked under
+    ``rule`` (:mod:`r3con.provenance`), built from the files of its folder alone, with
+    the claims it saved, none for a folder saved without them, as before r3con made
+    claims, and the evidence trail they make of that relevant trail. A folder any
+    earlier r3con wrote is read as one this r3con writes.
 
     It calls no model, and reads neither the run's config nor its prompts, so a run
     whose config or prompts this r3con no longer runs is traced all the same.
@@ -446,7 +448,9 @@ def trace(source: Answer | str | Path, rule: str = DEFAULT_RULE) -> AnswerProven
             is read, or the path of a run folder or of an ask's folder: an ask's answer
             is its own, and its summaries and parses those of the run it asked over.
         rule: the name of a rule in :data:`r3con.provenance.RULES`. Under the default,
-            the provenance is the one the answer was saved with.
+            the provenance is the one the answer was saved with; under another, the
+            relevant trail may reach other documents and quotes, and the evidence
+            trail is made of it.
 
     Raises:
         ValueError: if no rule is named ``rule``, before anything is read; if

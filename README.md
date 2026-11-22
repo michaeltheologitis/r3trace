@@ -188,7 +188,8 @@ result = r3con.run(
 ```
 
 R3Con then doesn't ask the model for quotes, so the provenance lists only
-documents (`result.provenance["documents"]`), not their sentences.
+documents (`result.provenance["relevant_trail"]["documents"]`), not their
+sentences.
 
 #### Re-use Representation
 
@@ -219,12 +220,17 @@ reasoning step.
 
 #### Provenance
 
-`result.provenance["documents"]` lists the documents behind the relevance
-summaries the answer cites, directly or through the parsed records it cites,
-each with its `document` ID and `name`.
+`result.provenance` has three parts: the relevant trail, the claims, and the
+evidence trail.
 
-`result.provenance["quotes"]` lists the sentences the answer is based on.
-Each has the document's `name`, `text` as the AI model quoted it, and
+`result.provenance["relevant_trail"]` is the answer's citations traced back.
+`cited` holds what the answer cites: the IDs of relevance summaries
+(`summary_ids`) and of documents whose parsed records it used (`parse_ids`).
+`documents` lists the documents behind those summaries, directly or through the
+parsed records it cites, each with its `document` ID and `name`.
+
+Its `quotes` list the sentences the answer is based on. Each has the
+document's `name`, `text` as the AI model quoted it, and
 `document_text`, the document's own words, from its `start` to its `end`
 character in that document. The two differ when the model changed the
 wording. `match` says how the sentence was found: `exact`, `normalized`
@@ -233,7 +239,7 @@ model wrote `...` for words it left out) or `fuzzy` (some words differ), and a
 `fuzzy` one has a `score` out of 100:
 
 ```python
-quote = result.provenance["quotes"][0]
+quote = result.provenance["relevant_trail"]["quotes"][0]
 print(quote["name"], quote["match"], quote["score"])  # q3/ardent.pdf fuzzy 94.1
 print(quote["text"])  # Ardent missed 8 delivery windows, mainly in August.
 print(quote["document_text"])  # Ardent missed 8 delivery windows, mostly in August.
@@ -245,8 +251,8 @@ With `evidence_level="document"`, `quotes` is empty.
 sentence, list item or table row) and links each one to the evidence that
 supports it. Each claim has its `text`, from its `start` to its `end`
 character in `result.answer`, the `documents` behind it by ID, and the
-`quotes` behind it, each by its `document`, `start` and `end`, as in
-`result.provenance["quotes"]`:
+`quotes` behind it, each by its `document`, `start` and `end`, as in the
+relevant trail's `quotes`:
 
 ```python
 for claim in result.provenance["claims"]:
@@ -256,6 +262,16 @@ for claim in result.provenance["claims"]:
 Finding the claims takes one more call to the AI model, after the answer. With
 `evidence_level="document"`, a claim lists only its documents. To skip the
 call, pass `claims=False`.
+
+`result.provenance["evidence_trail"]` is the part of the relevant trail the
+claims rest on: the `documents` and `quotes` they cite, in the same form. When
+no claim cites anything, for example with `claims=False`, it is the whole
+relevant trail. Its `from` says which: `"claims"` or `"trail"`.
+
+```python
+evidence = result.provenance["evidence_trail"]
+print(evidence["from"], [document["name"] for document in evidence["documents"]])
+```
 
 [`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/provenance.ipynb)
 shows the rest of the provenance.
@@ -318,7 +334,7 @@ logs/<timestamp>_<hex>/          <- result.run_dir
 │   ├── calls.json               <- AI requests
 │   └── transcript.yaml          <- record of the reasoning process
 ├── claims/
-│   ├── result.json              <- the answer's claims and the evidence behind each
+│   ├── result.json              <- the answer's claims and its evidence trail
 │   ├── calls.json               <- AI requests
 │   └── transcript.yaml          <- record of the request
 └── asks/<folder>/               <- saved results for each additional question

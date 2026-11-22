@@ -35,12 +35,15 @@ from tests.fakes import (
     USAGE,
     Raw,
     a_parse_citation_short,
+    as_saved_before_claims,
     asks_for_quotes,
     bad_key,
     cited_documents,
     citing,
     failing_once,
     first_line,
+    from_claims,
+    from_trail,
     in_json,
     is_later_round,
     named_documents,
@@ -349,17 +352,19 @@ def test_the_answer_cites_the_documents_it_used_in_the_result_and_the_run_folder
     )
     assert result.answer == "Halloran memo; Merrow memo"
     assert without_trail(result.provenance) == {
-        "summary_ids": [],
-        "parse_ids": result.document_ids,
-        "documents": [],
-        "quotes": [],
+        "relevant_trail": {
+            "cited": {"summary_ids": [], "parse_ids": result.document_ids},
+            "documents": [],
+            "quotes": [],
+        },
         "claims": [],
+        "evidence_trail": from_trail([], []),
     }
     assert result.relevance_provenance == [[], []]
     assert result.parsing_provenance == [[], []]
     folder = json.loads((result.run_dir / "reasoning" / "result.json").read_text())
-    saved = {**folder["provenance"], "claims": []}
-    assert (folder["path"], saved) == (reasoning, result.provenance)
+    saved = as_saved_before_claims(result.provenance)
+    assert (folder["path"], folder["provenance"]) == (reasoning, saved)
 
 
 def test_a_reasoning_path_r3con_does_not_have_is_refused_before_any_request(
@@ -510,7 +515,8 @@ def test_a_run_folder_without_names_can_be_asked_and_names_documents_by_index(
     asked = ask(quoted_run.run_dir, "Who else?", completion=answering_llm)
     assert asked.answer == "Halloran memo"
     assert asked.document_names == ["0", "1", "2"]
-    assert [quote["name"] for quote in asked.provenance["quotes"]] == ["1"]
+    quotes = asked.provenance["relevant_trail"]["quotes"]
+    assert [quote["name"] for quote in quotes] == ["1"]
 
 
 @pytest.mark.parametrize("rounds", [0, 2])
@@ -747,11 +753,12 @@ def test_a_run_with_a_document_in_parts_is_asked_through_each_of_its_rounds(
     )
     asked = ask(result, "Who else?", model=model, completion=answering_llm)
     assert asked.answer == "Halloran memo"
-    assert f"{result.document_ids[1]}.2" in asked.provenance["summary_ids"]
-    trail = asked.provenance["trail"]["nodes"]
-    reached = {node.split(":")[1] for node in trail if node.startswith("summary:")}
+    trail = asked.provenance["relevant_trail"]
+    assert f"{result.document_ids[1]}.2" in trail["cited"]["summary_ids"]
+    nodes = trail["nodes"]
+    reached = {node.split(":")[1] for node in nodes if node.startswith("summary:")}
     assert reached == {str(k) for k in range(1, rounds + 1)}
-    assert asked.provenance["quotes"]
+    assert trail["quotes"]
     assert trace(asked) == asked.provenance
 
 
@@ -839,19 +846,21 @@ def test_an_ask_quotes_the_round_one_summaries_its_answer_reaches_through_citati
         "quotes": [{"document": ids[1], "start": 0, "end": 11}],
     }
     assert without_trail(asked.provenance) == {
-        "summary_ids": [ids[0]],
-        "parse_ids": [],
-        "documents": named_documents(asked, 0, 1),
-        "quotes": [merrow],
+        "relevant_trail": {
+            "cited": {"summary_ids": [ids[0]], "parse_ids": []},
+            "documents": named_documents(asked, 0, 1),
+            "quotes": [merrow],
+        },
         "claims": [claim],
+        "evidence_trail": from_claims(named_documents(asked, 1), [merrow]),
     }
     assert asked.provenance == quoted_run.provenance
     assert asked.document_names == quoted_run.document_names == NAMES
-    claims = asked.provenance["claims"]
+    saved = as_saved_before_claims(asked.provenance)
     folder = json.loads((asked.run_dir / "reasoning" / "result.json").read_text())
-    assert {**folder["provenance"], "claims": claims} == asked.provenance
+    assert folder["provenance"] == saved
     [finished] = [e for e in events if e["type"] == "reasoning_finished"]
-    assert {**finished["provenance"], "claims": claims} == asked.provenance
+    assert finished["provenance"] == saved
 
 
 def test_an_ask_over_a_run_that_pruned_every_memo_reads_its_round_1_notes(
@@ -867,28 +876,31 @@ def test_an_ask_over_a_run_that_pruned_every_memo_reads_its_round_1_notes(
     assert asked_request["messages"][0] == ran["messages"][0]
     assert all(f"Notes on {doc}." in ran["messages"][0]["content"] for doc in DOCS)
     halloran = result.document_ids[0]
-    assert asked.provenance["summary_ids"] == [halloran]
-    edges = asked.provenance["trail"]["edges"]
-    assert ["answer", f"summary:1:{halloran}", "cites"] in edges
+    trail = asked.provenance["relevant_trail"]
+    assert trail["cited"]["summary_ids"] == [halloran]
+    assert ["answer", f"summary:1:{halloran}", "cites"] in trail["edges"]
     assert asked.relevant_context == [f"Notes on {doc}." for doc in DOCS]
 
 
 def test_a_run_folder_whose_snippets_have_no_quotes_can_be_asked_and_quotes_nothing(
     answering_llm, quoted_run
 ):
-    assert quoted_run.provenance["quotes"]
+    assert quoted_run.provenance["relevant_trail"]["quotes"]
     in_json("relevance/result.json", snippets_without_quotes)(quoted_run.run_dir)
     asked = ask(quoted_run.run_dir, "Who else?", completion=answering_llm)
     assert asked.answer == "Halloran memo"
     ran, asked_request = answering_llm.requests_for("reasoning")
     assert asked_request["messages"][0] == ran["messages"][0]
     ids = quoted_run.document_ids
+    documents = named_documents(asked, 0, 1)
     assert without_trail(asked.provenance) == {
-        "summary_ids": [ids[0]],
-        "parse_ids": [],
-        "documents": named_documents(asked, 0, 1),
-        "quotes": [],
+        "relevant_trail": {
+            "cited": {"summary_ids": [ids[0]], "parse_ids": []},
+            "documents": documents,
+            "quotes": [],
+        },
         "claims": [],
+        "evidence_trail": from_trail(documents, []),
     }
 
 
@@ -957,22 +969,36 @@ def test_trace_gives_the_saved_provenance_and_a_parse_rule_adds_its_documents_on
 ):
     assert trace(cited_run.run_dir) == trace(cited_run) == cited_run.provenance
     saved = saved_provenance(cited_run.run_dir)
-    assert {**saved, "claims": cited_run.provenance["claims"]} == cited_run.provenance
+    assert saved == as_saved_before_claims(cited_run.provenance)
     last = cited_run.document_ids[-1]
     lit = trace(str(cited_run.run_dir), "parses-light-documents")
-    trail = cited_run.provenance["trail"]
-    assert lit["trail"]["rule"] == "parses-light-documents"
-    assert [e for e in lit["trail"]["edges"] if e not in trail["edges"]] == [
+    trail = cited_run.provenance["relevant_trail"]
+    assert lit["relevant_trail"]["rule"] == "parses-light-documents"
+    assert [e for e in lit["relevant_trail"]["edges"] if e not in trail["edges"]] == [
         [f"parse:{last}", f"document:{last}", "parses"]
     ]
-    assert [n for n in lit["trail"]["nodes"] if n not in trail["nodes"]] == [
+    assert [n for n in lit["relevant_trail"]["nodes"] if n not in trail["nodes"]] == [
         f"document:{last}"
     ]
-    documents = [*cited_run.provenance["documents"], *named_documents(cited_run, -1)]
+    documents = [*trail["documents"], *named_documents(cited_run, -1)]
+    unwalked = without_trail(cited_run.provenance)
     assert without_trail(lit) == {
-        **without_trail(cited_run.provenance),
-        "documents": documents,
+        **unwalked,
+        "relevant_trail": {**unwalked["relevant_trail"], "documents": documents},
     }
+
+
+def test_without_claims_a_parse_rules_evidence_trail_is_its_whole_relevant_trail(
+    cited_run,
+):
+    shutil.rmtree(cited_run.run_dir / "claims")
+    lit = trace(cited_run.run_dir, "parses-light-documents")
+    relevant = lit["relevant_trail"]
+    walked = cited_run.provenance["relevant_trail"]["documents"]
+    assert relevant["documents"] == [*walked, *named_documents(cited_run, -1)]
+    assert lit["evidence_trail"] == from_trail(
+        relevant["documents"], relevant["quotes"]
+    )
 
 
 def test_trace_of_an_asks_folder_follows_the_asks_citations_through_the_runs_records(
@@ -981,7 +1007,7 @@ def test_trace_of_an_asks_folder_follows_the_asks_citations_through_the_runs_rec
     answering_llm.answers(reasoning=citing("Merrow memo", slice(-1, None)))
     asked = ask(cited_run, "Who else?", completion=answering_llm)
     assert trace(asked.run_dir) == trace(asked) == asked.provenance
-    assert asked.provenance["trail"] != cited_run.provenance["trail"]
+    assert asked.provenance["relevant_trail"] != cited_run.provenance["relevant_trail"]
 
 
 def test_trace_reads_an_older_folder_whose_answer_cites_a_note_outside_its_context(
@@ -990,18 +1016,21 @@ def test_trace_reads_an_older_folder_whose_answer_cites_a_note_outside_its_conte
     stray = f"{cited_run.document_ids[0]}.1"
 
     def citing_a_stray_note(result: dict) -> None:
-        result["provenance"]["summary_ids"].append(stray)
+        result["provenance"]["relevant_trail"]["cited"]["summary_ids"].append(stray)
 
     in_json("reasoning/result.json", citing_a_stray_note)(cited_run.run_dir)
-    traced = trace(cited_run.run_dir)
-    assert traced["summary_ids"][-1] == stray
-    assert ["answer", f"summary:2:{stray}", "cites"] in traced["trail"]["edges"]
+    traced = trace(cited_run.run_dir)["relevant_trail"]
+    assert traced["cited"]["summary_ids"][-1] == stray
+    assert ["answer", f"summary:2:{stray}", "cites"] in traced["edges"]
 
 
 def test_trace_of_a_folder_whose_snippets_have_no_quotes_quotes_nothing(cited_run):
-    assert cited_run.provenance["quotes"]
+    trail = cited_run.provenance["relevant_trail"]
+    assert trail["quotes"]
     in_json("relevance/result.json", snippets_without_quotes)(cited_run.run_dir)
-    assert trace(cited_run.run_dir) == {**cited_run.provenance, "quotes": []}
+    traced = trace(cited_run.run_dir)
+    assert traced["relevant_trail"] == {**trail, "quotes": []}
+    assert traced["evidence_trail"]["quotes"] == []
 
 
 ARDENT = (
@@ -1065,20 +1094,21 @@ def test_each_answer_quote_gives_the_documents_own_words_and_how_they_were_found
         }
         for text, words, match, score in ARDENT_QUOTES
     ]
-    assert ardent_run.provenance["quotes"] == found
-    assert trace(ardent_run.run_dir)["quotes"] == found
+    assert ardent_run.provenance["relevant_trail"]["quotes"] == found
+    assert trace(ardent_run.run_dir)["relevant_trail"]["quotes"] == found
     asked = ask(ardent_run, "Who else?", completion=answering_llm)
-    assert asked.provenance["quotes"] == found
+    assert asked.provenance["relevant_trail"]["quotes"] == found
 
 
 def test_a_run_folder_whose_quotes_have_no_document_text_gives_none_for_it(
     answering_llm, ardent_run
 ):
     in_json("relevance/result.json", quotes_without_document_text)(ardent_run.run_dir)
-    as_saved = [{**q, "document_text": None} for q in ardent_run.provenance["quotes"]]
-    assert trace(ardent_run.run_dir)["quotes"] == as_saved
+    quotes = ardent_run.provenance["relevant_trail"]["quotes"]
+    as_saved = [{**q, "document_text": None} for q in quotes]
+    assert trace(ardent_run.run_dir)["relevant_trail"]["quotes"] == as_saved
     asked = ask(ardent_run, "Who else?", completion=answering_llm)
-    assert asked.provenance["quotes"] == as_saved
+    assert asked.provenance["relevant_trail"]["quotes"] == as_saved
 
 
 def pinning_a_missing_prompt(manifest: dict) -> None:
@@ -1919,7 +1949,8 @@ def test_a_run_begun_before_quotes_kept_document_text_resumes_with_it_replaying_
     reported = [e for e in seen if e["type"] == "relevance_finished"]
     assert len(reported) == 2 * len(MEMOS_BY_NAME)
     # The answer cites Halloran's round-2 summary, which cites every other round-1 one.
-    quoted = [q["document_text"] for q in answer.provenance["quotes"]]
+    quotes = answer.provenance["relevant_trail"]["quotes"]
+    quoted = [q["document_text"] for q in quotes]
     assert quoted == list(MEMOS_BY_NAME.values())
 
 
@@ -2164,7 +2195,7 @@ def test_a_resumed_all_pruned_run_reuses_its_structuring_and_answers_from_round_
     answer, requests = resumed(llm, run_dir, on_event=seen.append)
     assert requests == [("reasoning", None)]
     ids = answer.document_ids
-    assert answer.provenance["summary_ids"] == ids
+    assert answer.provenance["relevant_trail"]["cited"]["summary_ids"] == ids
     assert answer.relevant_context == [f"Notes on {m}." for m in MEMOS_BY_NAME.values()]
     pruning = [
         (e["round"], e["doc_ids"]) for e in seen if e["type"] == "documents_pruned"

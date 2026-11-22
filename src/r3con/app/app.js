@@ -74,11 +74,22 @@
    * @typedef {{ summary_ids: number[], parse_ids: number[], trail: ProvenanceTrail }} Provenance
    */
   /**
-   * An answer's provenance as r3con gives it (r3con.pipeline.Answer.provenance), citing by id, but for its claims.
-   * @typedef {{ summary_ids: string[], parse_ids: string[], documents: NamedDocument[], quotes: NamedQuote[],
-   *   trail: ProvenanceTrail }} R3conProvenance
+   * An answer's relevant trail as r3con gives it (r3con.provenance.RelevantTrail): what it cites, by id, its trail, and
+   * the documents and quotes on that trail.
+   * @typedef {ProvenanceTrail & { cited: { summary_ids: string[], parse_ids: string[] }, documents: NamedDocument[],
+   *   quotes: NamedQuote[] }} RelevantTrail
    */
-  /** @typedef {R3conProvenance & { claims: Claim[] }} TracedProvenance An answer's provenance as r3con.trace gives it. */
+  /** @typedef {{ relevant_trail: RelevantTrail }} R3conProvenance An answer's provenance as r3con gives it, but for its claims. */
+  /**
+   * What an answer cites, by id, and its trail, as r3context 0.6.45 and earlier gave them at the top of its provenance,
+   * beside its documents and quotes; SAMPLE and RECORDED_ASKS hold them so.
+   * @typedef {{ summary_ids: string[], parse_ids: string[], trail: ProvenanceTrail }} EarlierCitations
+   */
+  /** @typedef {EarlierCitations & { documents: NamedDocument[], quotes: NamedQuote[] }} EarlierProvenance */
+  /**
+   * An answer's provenance as r3con.trace gives it, or gave it; the page reads neither's evidence trail.
+   * @typedef {(R3conProvenance | EarlierProvenance) & { claims: Claim[] }} TracedProvenance
+   */
   /** @typedef {{ document: string, start: number, end: number }} QuotePlace A quote behind an answer, as a claim names it. */
   /**
    * A claim an answer makes, as r3con gives it (r3con.provenance.Claim): one of its sentences, list items or table rows,
@@ -2619,8 +2630,13 @@
     return [...new Set(ids.flatMap((id) => docIndex(run, id) ?? []))];
   }
 
-  /** @param {Pick<Run, 'indexes'>} run @param {Omit<R3conProvenance, 'documents' | 'quotes'>} provenance @returns {Provenance} */
-  function provenanceOf(run, { summary_ids, parse_ids, trail }) {
+  /** @param {RelevantTrail} relevant @returns {EarlierCitations} */
+  const earlierCitations = ({ cited, rule, nodes, edges }) => ({ ...cited, trail: { rule, nodes, edges } });
+
+  // The one place r3con's provenance becomes the page's: today's, or as r3context 0.6.45 and earlier gave it.
+  /** @param {Pick<Run, 'indexes'>} run @param {R3conProvenance | EarlierCitations} provenance @returns {Provenance} */
+  function provenanceOf(run, provenance) {
+    const { summary_ids, parse_ids, trail } = 'relevant_trail' in provenance ? earlierCitations(provenance.relevant_trail) : provenance;
     return { summary_ids: docIndices(run, summary_ids), parse_ids: docIndices(run, parse_ids), trail };
   }
 
