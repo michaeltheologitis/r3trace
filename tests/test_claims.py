@@ -29,9 +29,9 @@ QUESTION = "Who?"
 HALLORAN = "The Halloran memo logs two sites."
 MERROW = "The Merrow memo logs two sites."
 ANSWER = f"{HALLORAN} {MERROW}"
-SENTENCE_SYSTEM = """You will be given a question and an answer that is supported by a collection of quotes. Your job is to extract the exact claims made in the answer, word for word (each sentence, list item or table row), along with the IDs of the quotes that support them, if any.
+SENTENCE_SYSTEM = """You will be given a question and an answer that is supported by a collection of quotes. Your job is to extract the exact claims made in the answer, word for word (each sentence, clause, list item or table row; split a sentence that makes several claims into its parts, each word for word), along with the IDs of every quote that supports them or any part of them.
 Return exactly one JSON object with the key `claims`, where each item has `text` and `quote_ids`. Output only that JSON.
-Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Base quote_ids only on the provided quotes; if no quote supports a claim, use an empty array. Do not guess or infer unsupported quote IDs.
+Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Base quote_ids only on the provided quotes: cite every quote that supports the claim or any part of it, and use an empty array only when no quote supports any part of it. Do not guess or infer unsupported quote IDs.
 ## Example
 <question>
 Which bakery sold more loaves in March, and by how much?
@@ -50,9 +50,9 @@ Loaves sold in March: 980.
 The shop is open seven days a week.
 </quotes>
 Reply: {"claims": [{"text": "Rye & Co. sold more loaves in March: 1,240 against Hearth's 980, a difference of 260.", "quote_ids": ["q1", "q3"]}, {"text": "Neither report gives prices.", "quote_ids": []}]}"""
-DOCUMENT_SYSTEM = """You will be given a question and an answer that is supported by a collection of document summaries. Your job is to extract the exact claims made in the answer, word for word (each sentence, list item or table row), along with the IDs of the documents whose summaries support them, if any.
+DOCUMENT_SYSTEM = """You will be given a question and an answer that is supported by a collection of document summaries. Your job is to extract the exact claims made in the answer, word for word (each sentence, clause, list item or table row; split a sentence that makes several claims into its parts, each word for word), along with the IDs of every document whose summary supports them or any part of them.
 Return exactly one JSON object with the key `claims`, where each item has `text` and `document_ids`. Output only that JSON.
-Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Base document_ids only on the provided summaries; if no summary supports a claim, use an empty array. Do not guess or infer unsupported document IDs.
+Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Base document_ids only on the provided summaries: cite every document whose summary supports the claim or any part of it, and use an empty array only when no summary supports any part of it. Do not guess or infer unsupported document IDs.
 ## Example
 <question>
 Which trial sites reported adverse events?
@@ -709,7 +709,7 @@ def test_a_resume_refuses_a_claims_prompt_that_now_resolves_elsewhere(
     quoting_llm, tmp_path
 ):
     run_dir = failed_with_its_claims_prompt_shadowed(quoting_llm, tmp_path)
-    with pytest.raises(ValueError, match=r"claims now reads \S+/prompts/claims/v1"):
+    with pytest.raises(ValueError, match=r"claims now reads \S+/prompts/claims/v2"):
         resume(run_dir, TWO_LINE_MEMOS, completion=quoting_llm)
 
 

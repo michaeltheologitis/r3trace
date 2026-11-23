@@ -21,9 +21,9 @@ reasoning: direct
 # is based on, quoted; document = the summary alone, so the trail ends at documents.
 evidence_level: sentence
 
-# Whether a last call links each claim of the answer, each sentence, list item or table
-# row, to the evidence on its trail that supports it: the quotes it rests on at the
-# sentence level, the documents at the document level.
+# Whether a last call links each claim of the answer, each sentence, clause, list item
+# or table row, to the evidence on its trail that supports it: the quotes it rests on
+# at the sentence level, the documents at the document level.
 claims: true
 
 prompts:
@@ -33,7 +33,7 @@ prompts:
   structuring/parsing: v4
   reasoning/direct: v5
   reasoning/coding: v4
-  claims: v1
+  claims: v2
 
 # Passed straight to litellm.completion — temperature, top_p, seed, extra_body, anything
 # it accepts. Empty means provider defaults.

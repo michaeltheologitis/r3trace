@@ -3,10 +3,11 @@
 An answer alone does not say which of its sentences rests on what, so one more call,
 to reasoning's model with its params, is shown the question, the answer, and the
 evidence on the answer's trail, each piece under an id. It copies out the answer's
-claims, each sentence, list item or table row, with the ids of the evidence that
-supports each, and each claim is then found in the answer. The evidence is the relevant
-trail's quotes at the ``"sentence"`` evidence level, and at ``"document"`` each of its
-documents' round-1 relevance summary, the one written from that document alone.
+claims, each sentence, clause, list item or table row, with the ids of all the
+evidence that supports any part of each, and each claim is then found in the answer.
+The evidence is the relevant trail's quotes at the ``"sentence"`` evidence level, and
+at ``"document"`` each of its documents' round-1 relevance summary, the one written
+from that document alone.
 """
 
 from __future__ import annotations
