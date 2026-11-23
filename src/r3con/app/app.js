@@ -74,11 +74,18 @@
    * @typedef {{ summary_ids: number[], parse_ids: number[], trail: ProvenanceTrail }} Provenance
    */
   /**
-   * An answer's provenance as r3con gives it (r3con.pipeline.Answer.provenance), citing by id, but for its claims.
-   * @typedef {{ summary_ids: string[], parse_ids: string[], documents: NamedDocument[], quotes: NamedQuote[],
-   *   trail: ProvenanceTrail }} R3conProvenance
+   * An answer's relevant trail as r3con gives it (r3con.provenance.RelevantTrail): what it cites, by id, its trail, and
+   * the documents and quotes on that trail.
+   * @typedef {ProvenanceTrail & { cited: { summary_ids: string[], parse_ids: string[] }, documents: NamedDocument[],
+   *   quotes: NamedQuote[] }} RelevantTrail
    */
-  /** @typedef {R3conProvenance & { claims: Claim[] }} TracedProvenance An answer's provenance as r3con.trace gives it. */
+  /** @typedef {{ relevant_trail: RelevantTrail }} R3conProvenance An answer's provenance as r3con gives it, but for its claims. */
+  /**
+   * The part of an answer's relevant trail its claims rest on, as r3con gives it (r3con.provenance.EvidenceTrail): the
+   * page draws a claim's own path instead.
+   * @typedef {{ from: 'claims' | 'trail', documents: NamedDocument[], quotes: NamedQuote[] }} EvidenceTrail
+   */
+  /** @typedef {R3conProvenance & { claims: Claim[], evidence_trail: EvidenceTrail }} TracedProvenance An answer's provenance as r3con.trace gives it. */
   /** @typedef {{ document: string, start: number, end: number }} QuotePlace A quote behind an answer, as a claim names it. */
   /**
    * A claim an answer makes, as r3con gives it (r3con.provenance.Claim): one of its sentences, list items or table rows,
@@ -262,7 +269,7 @@
    *   | { type: 'reasoning_finished', answer: string,
    *       provenance: R3conProvenance }
    *   | { type: 'claims_started' }
-   *   | { type: 'claims_finished', claims: Claim[] }
+   *   | { type: 'claims_finished', claims: Claim[], evidence_trail: EvidenceTrail }
    *   | { type: 'run_finished' | 'ask_finished', tokens: { total: number } | null, usd: number | null }
    *   | { type: 'run_failed' | 'ask_failed', stage: string | null, error: string, code?: string }
    * } ServerEvent
@@ -601,129 +608,21 @@
  "answer": {
   "text": "Halloran Services Ltd’s sites logged the most equipment incidents in Q3, with 11 in total (5 at Northgate and 6 at Riverside).",
   "provenance": {
-   "summary_ids": [
-    "17f027",
-    "9e02b3",
-    "964bc2",
-    "d9add2"
-   ],
-   "parse_ids": [
-    "17f027",
-    "9e02b3",
-    "964bc2",
-    "d9add2"
-   ],
-   "documents": [
-    {
-     "document": "17f027",
-     "name": "0"
+   "relevant_trail": {
+    "cited": {
+     "summary_ids": [
+      "17f027",
+      "9e02b3",
+      "964bc2",
+      "d9add2"
+     ],
+     "parse_ids": [
+      "17f027",
+      "9e02b3",
+      "964bc2",
+      "d9add2"
+     ]
     },
-    {
-     "document": "964bc2",
-     "name": "1"
-    },
-    {
-     "document": "9e02b3",
-     "name": "2"
-    },
-    {
-     "document": "d9add2",
-     "name": "3"
-    }
-   ],
-   "quotes": [
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 5.",
-     "document_text": "Equipment incidents logged this quarter: 5.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 141,
-     "end": 218,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 9.",
-     "document_text": "Equipment incidents logged this quarter: 9.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 136,
-     "end": 213,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 6.",
-     "document_text": "Equipment incidents logged this quarter: 6.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 164,
-     "end": 241,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 54,
-     "end": 127,
-     "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 128,
-     "end": 189,
-     "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 248,
-     "end": 328,
-     "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "match": "exact",
-     "score": null
-    }
-   ],
-   "trail": {
     "rule": "through-summaries",
     "nodes": [
      "answer",
@@ -860,6 +759,116 @@
       "document:964bc2",
       "summarizes"
      ]
+    ],
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 248,
+      "end": 328,
+      "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "match": "exact",
+      "score": null
+     }
     ]
    },
    "claims": [
@@ -916,7 +925,110 @@
       }
      ]
     }
-   ]
+   ],
+   "evidence_trail": {
+    "from": "claims",
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     }
+    ]
+   }
   }
  },
  "calls": {
@@ -1022,127 +1134,19 @@
   "created": "2026-11-05T17:37:51+00:00",
   "text": "Halloran Services Ltd maintains the Northgate and Riverside sites.",
   "provenance": {
-   "summary_ids": [
-    "17f027",
-    "9e02b3",
-    "d9add2"
-   ],
-   "parse_ids": [
-    "17f027",
-    "9e02b3",
-    "d9add2"
-   ],
-   "documents": [
-    {
-     "document": "17f027",
-     "name": "0"
+   "relevant_trail": {
+    "cited": {
+     "summary_ids": [
+      "17f027",
+      "9e02b3",
+      "d9add2"
+     ],
+     "parse_ids": [
+      "17f027",
+      "9e02b3",
+      "d9add2"
+     ]
     },
-    {
-     "document": "964bc2",
-     "name": "1"
-    },
-    {
-     "document": "9e02b3",
-     "name": "2"
-    },
-    {
-     "document": "d9add2",
-     "name": "3"
-    }
-   ],
-   "quotes": [
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 5.",
-     "document_text": "Equipment incidents logged this quarter: 5.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 141,
-     "end": 218,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 9.",
-     "document_text": "Equipment incidents logged this quarter: 9.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 136,
-     "end": 213,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 6.",
-     "document_text": "Equipment incidents logged this quarter: 6.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 164,
-     "end": 241,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 54,
-     "end": 127,
-     "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 128,
-     "end": 189,
-     "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 248,
-     "end": 328,
-     "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "match": "exact",
-     "score": null
-    }
-   ],
-   "trail": {
     "rule": "through-summaries",
     "nodes": [
      "answer",
@@ -1257,9 +1261,232 @@
       "document:964bc2",
       "summarizes"
      ]
+    ],
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 248,
+      "end": 328,
+      "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "match": "exact",
+      "score": null
+     }
     ]
    },
-   "claims": []
+   "claims": [],
+   "evidence_trail": {
+    "from": "trail",
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 248,
+      "end": 328,
+      "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "match": "exact",
+      "score": null
+     }
+    ]
+   }
   },
   "totals": {
    "tokens": 3313,
@@ -1273,127 +1500,19 @@
   "created": "2026-11-05T17:37:54+00:00",
   "text": "Halloran Services Ltd maintains the Northgate and Riverside sites.",
   "provenance": {
-   "summary_ids": [
-    "17f027",
-    "9e02b3",
-    "d9add2"
-   ],
-   "parse_ids": [
-    "17f027",
-    "9e02b3",
-    "d9add2"
-   ],
-   "documents": [
-    {
-     "document": "17f027",
-     "name": "0"
+   "relevant_trail": {
+    "cited": {
+     "summary_ids": [
+      "17f027",
+      "9e02b3",
+      "d9add2"
+     ],
+     "parse_ids": [
+      "17f027",
+      "9e02b3",
+      "d9add2"
+     ]
     },
-    {
-     "document": "964bc2",
-     "name": "1"
-    },
-    {
-     "document": "9e02b3",
-     "name": "2"
-    },
-    {
-     "document": "d9add2",
-     "name": "3"
-    }
-   ],
-   "quotes": [
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 5.",
-     "document_text": "Equipment incidents logged this quarter: 5.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 141,
-     "end": 218,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 9.",
-     "document_text": "Equipment incidents logged this quarter: 9.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 136,
-     "end": 213,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 6.",
-     "document_text": "Equipment incidents logged this quarter: 6.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 164,
-     "end": 241,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 54,
-     "end": 127,
-     "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 128,
-     "end": 189,
-     "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 248,
-     "end": 328,
-     "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "match": "exact",
-     "score": null
-    }
-   ],
-   "trail": {
     "rule": "through-summaries",
     "nodes": [
      "answer",
@@ -1508,9 +1627,232 @@
       "document:964bc2",
       "summarizes"
      ]
+    ],
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 248,
+      "end": 328,
+      "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "match": "exact",
+      "score": null
+     }
     ]
    },
-   "claims": []
+   "claims": [],
+   "evidence_trail": {
+    "from": "trail",
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 248,
+      "end": 328,
+      "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "match": "exact",
+      "score": null
+     }
+    ]
+   }
   },
   "totals": {
    "tokens": 3288,
@@ -1524,125 +1866,17 @@
   "created": "2026-11-05T17:37:56+00:00",
   "text": "Merrow Facilities Group's site(s) logged 9 equipment incidents in Q3.",
   "provenance": {
-   "summary_ids": [
-    "964bc2",
-    "d9add2"
-   ],
-   "parse_ids": [
-    "964bc2",
-    "d9add2"
-   ],
-   "documents": [
-    {
-     "document": "17f027",
-     "name": "0"
+   "relevant_trail": {
+    "cited": {
+     "summary_ids": [
+      "964bc2",
+      "d9add2"
+     ],
+     "parse_ids": [
+      "964bc2",
+      "d9add2"
+     ]
     },
-    {
-     "document": "964bc2",
-     "name": "1"
-    },
-    {
-     "document": "9e02b3",
-     "name": "2"
-    },
-    {
-     "document": "d9add2",
-     "name": "3"
-    }
-   ],
-   "quotes": [
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 5.",
-     "document_text": "Equipment incidents logged this quarter: 5.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "17f027",
-     "name": "0",
-     "start": 141,
-     "end": 218,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 9.",
-     "document_text": "Equipment incidents logged this quarter: 9.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "964bc2",
-     "name": "1",
-     "start": 136,
-     "end": 213,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 45,
-     "end": 88,
-     "text": "Equipment incidents logged this quarter: 6.",
-     "document_text": "Equipment incidents logged this quarter: 6.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "9e02b3",
-     "name": "2",
-     "start": 164,
-     "end": 241,
-     "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 54,
-     "end": 127,
-     "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 128,
-     "end": 189,
-     "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
-     "match": "exact",
-     "score": null
-    },
-    {
-     "document": "d9add2",
-     "name": "3",
-     "start": 248,
-     "end": 328,
-     "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
-     "match": "exact",
-     "score": null
-    }
-   ],
-   "trail": {
     "rule": "through-summaries",
     "nodes": [
      "answer",
@@ -1730,9 +1964,232 @@
       "document:9e02b3",
       "summarizes"
      ]
+    ],
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 248,
+      "end": 328,
+      "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "match": "exact",
+      "score": null
+     }
     ]
    },
-   "claims": []
+   "claims": [],
+   "evidence_trail": {
+    "from": "trail",
+    "documents": [
+     {
+      "document": "17f027",
+      "name": "0"
+     },
+     {
+      "document": "964bc2",
+      "name": "1"
+     },
+     {
+      "document": "9e02b3",
+      "name": "2"
+     },
+     {
+      "document": "d9add2",
+      "name": "3"
+     }
+    ],
+    "quotes": [
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 5.",
+      "document_text": "Equipment incidents logged this quarter: 5.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "17f027",
+      "name": "0",
+      "start": 141,
+      "end": 218,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 9.",
+      "document_text": "Equipment incidents logged this quarter: 9.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "964bc2",
+      "name": "1",
+      "start": 136,
+      "end": 213,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-204.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 45,
+      "end": 88,
+      "text": "Equipment incidents logged this quarter: 6.",
+      "document_text": "Equipment incidents logged this quarter: 6.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "9e02b3",
+      "name": "2",
+      "start": 164,
+      "end": 241,
+      "text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "document_text": "Planned maintenance at this site is carried out under contractor code CT-118.",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 54,
+      "end": 127,
+      "text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "document_text": "CT-118 .... Halloran Services Ltd — mechanical and electrical maintenance",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 128,
+      "end": 189,
+      "text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "document_text": "CT-204 .... Merrow Facilities Group — HVAC and compressed air",
+      "match": "exact",
+      "score": null
+     },
+     {
+      "document": "d9add2",
+      "name": "3",
+      "start": 248,
+      "end": 328,
+      "text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "document_text": "Codes are used in site paperwork; the registry is the authority for the mapping.",
+      "match": "exact",
+      "score": null
+     }
+    ]
+   }
   },
   "totals": {
    "tokens": 3353,
@@ -2619,9 +3076,14 @@
     return [...new Set(ids.flatMap((id) => docIndex(run, id) ?? []))];
   }
 
-  /** @param {Pick<Run, 'indexes'>} run @param {Omit<R3conProvenance, 'documents' | 'quotes'>} provenance @returns {Provenance} */
-  function provenanceOf(run, { summary_ids, parse_ids, trail }) {
+  /** @param {Pick<Run, 'indexes'>} run @param {RelevantTrail['cited']} cited @param {ProvenanceTrail} trail @returns {Provenance} */
+  function indexedProvenance(run, { summary_ids, parse_ids }, trail) {
     return { summary_ids: docIndices(run, summary_ids), parse_ids: docIndices(run, parse_ids), trail };
+  }
+
+  /** @param {Pick<Run, 'indexes'>} run @param {R3conProvenance} provenance @returns {Provenance} */
+  function provenanceOf(run, { relevant_trail: { cited, rule, nodes, edges } }) {
+    return indexedProvenance(run, cited, { rule, nodes, edges });
   }
 
   /** @param {{ tokens: { total: number } | null, usd: number | null }} event */
@@ -2740,7 +3202,7 @@
     const trail = { rule: ONE_HOP, nodes: [TRAIL_ANSWER, ...cited, ...summary_ids.map(documentNode)], edges };
     return {
       text: `R3Con's answer to “${question}” would appear here. The documents it cites are made up.`,
-      provenance: provenanceOf(run, { summary_ids, parse_ids, trail }),
+      provenance: indexedProvenance(run, { summary_ids, parse_ids }, trail),
     };
   }
 

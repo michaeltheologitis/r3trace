@@ -15,12 +15,14 @@ from tests.fakes import (
     bad_key,
     citing,
     claims_reply,
+    evidence,
     first_line,
     in_json,
     is_later_round,
     quoting_a_line_a_round,
     shown_evidence,
     stage_of,
+    whole_trail,
 )
 
 QUESTION = "Who?"
@@ -215,7 +217,7 @@ def test_claims_are_the_answers_own_words_in_its_order_with_what_supports_them(
     quoting_llm, tmp_path
 ):
     result = claimed(quoting_llm, tmp_path, (MERROW, ["q5", "q3"]), (HALLORAN, ["q2"]))
-    quotes = result.provenance["quotes"]
+    quotes = result.provenance["relevant_trail"]["quotes"]
     halloran, merrow, calder = result.document_ids
     assert result.provenance["claims"] == [
         {
@@ -235,6 +237,45 @@ def test_claims_are_the_answers_own_words_in_its_order_with_what_supports_them(
     ]
     saved = json.loads((result.run_dir / "claims" / "result.json").read_text())
     assert saved["claims"] == result.provenance["claims"]
+    assert saved["evidence_trail"] == result.provenance["evidence_trail"]
+
+
+def test_the_evidence_trail_is_what_the_claims_cite_in_the_answer_folder_and_event(
+    quoting_llm, tmp_path, events_in
+):
+    result = claimed(quoting_llm, tmp_path, (MERROW, []), (HALLORAN, ["q2"]))
+    trail = result.provenance["relevant_trail"]
+    claimed_trail = evidence("claims", [trail["documents"][0]], [trail["quotes"][1]])
+    assert result.provenance["evidence_trail"] == claimed_trail
+    saved = json.loads((result.run_dir / "claims" / "result.json").read_text())
+    assert saved["evidence_trail"] == claimed_trail
+    [finished] = [
+        e for e in events_in(result.run_dir) if e["type"] == "claims_finished"
+    ]
+    assert finished["evidence_trail"] == claimed_trail
+    assert trace(result)["evidence_trail"] == claimed_trail
+
+
+def test_at_the_document_level_the_evidence_trail_is_the_documents_claims_name(
+    quoting_llm, tmp_path
+):
+    def claiming_merrow(request) -> dict:
+        merrow = shown_evidence(request)[1]
+        return claims_reply((HALLORAN, []), (MERROW, [merrow]))(request)
+
+    quoting_llm.answers(claims=claiming_merrow)
+    result = run_memos(quoting_llm, tmp_path, evidence_level="document")
+    documents = result.provenance["relevant_trail"]["documents"]
+    assert result.provenance["evidence_trail"] == evidence("claims", [documents[1]], [])
+
+
+def test_claims_that_cite_nothing_leave_the_whole_trail_as_the_evidence_trail(
+    quoting_llm, tmp_path
+):
+    result = claimed(quoting_llm, tmp_path, (HALLORAN, []), (MERROW, []))
+    assert [claim["documents"] for claim in result.provenance["claims"]] == [[], []]
+    assert result.provenance["evidence_trail"] == whole_trail(result.provenance)
+    assert trace(result)["evidence_trail"] == whole_trail(result.provenance)
 
 
 def test_a_sentence_the_answer_repeats_is_claimed_where_each_claim_makes_it(
@@ -282,7 +323,7 @@ def test_an_id_the_call_did_not_show_is_dropped_with_a_warning(
     caplog.set_level(logging.WARNING, logger="r3con")
     result = claimed(quoting_llm, tmp_path, (HALLORAN, ["q9", "q2", "a1b2c3"]))
     [claim] = result.provenance["claims"]
-    assert claim["quotes"] == [place(result.provenance["quotes"][1])]
+    assert claim["quotes"] == [place(result.provenance["relevant_trail"]["quotes"][1])]
     assert (
         "claims: dropped provenance id(s) the call did not show: ['q9', 'a1b2c3']"
     ) in caplog.text
@@ -324,7 +365,7 @@ def test_a_claim_altered_slightly_is_found_and_keeps_the_answers_words(
     result = claimed(quoting_llm, tmp_path, (altered, ["q4"]))
     [claim] = result.provenance["claims"]
     assert claim["text"] == found == ANSWER[claim["start"] : claim["end"]]
-    assert claim["quotes"] == [place(result.provenance["quotes"][3])]
+    assert claim["quotes"] == [place(result.provenance["relevant_trail"]["quotes"][3])]
 
 
 def test_an_elided_quote_is_shown_in_the_notes_words_not_the_span_it_skips(
@@ -336,7 +377,7 @@ def test_an_elided_quote_is_shown_in_the_notes_words_not_the_span_it_skips(
 
     answering_llm.answers(relevance=eliding, reasoning=citing(ANSWER, slice(None)))
     result = run_memos(answering_llm, tmp_path)
-    [elided, *_] = result.provenance["quotes"]
+    [elided, *_] = result.provenance["relevant_trail"]["quotes"]
     assert (elided["match"], elided["document_text"]) == ("elided", HALLORAN)
     [request] = answering_llm.requests_for("claims")
     user = request["messages"][1]["content"]
@@ -349,12 +390,16 @@ def test_an_answer_whose_trail_holds_no_evidence_makes_no_claims_call(
     answering_llm, tmp_path, level
 ):
     result = run_memos(answering_llm, tmp_path, evidence_level=level)
-    assert (result.provenance["quotes"], result.provenance["documents"]) == ([], [])
+    trail = result.provenance["relevant_trail"]
+    assert (trail["quotes"], trail["documents"]) == ([], [])
     assert answering_llm.requests_for("claims") == []
     assert result.provenance["claims"] == []
+    nothing = evidence("trail", [], [])
+    assert result.provenance["evidence_trail"] == nothing
     folder = result.run_dir / "claims"
     assert json.loads((folder / "calls.json").read_text()) == []
-    assert json.loads((folder / "result.json").read_text())["claims"] == []
+    saved = json.loads((folder / "result.json").read_text())
+    assert (saved["claims"], saved["evidence_trail"]) == ([], nothing)
 
 
 def test_a_claims_request_over_the_models_line_is_not_sent(
@@ -364,9 +409,10 @@ def test_a_claims_request_over_the_models_line_is_not_sent(
     quoting_llm.answers(reasoning=citing(LONG_ANSWER, slice(None)))
     result = run_memos(quoting_llm, tmp_path, model=window(WINDOW_TOKENS))
     assert result.answer == LONG_ANSWER
-    assert result.provenance["quotes"]
+    assert result.provenance["relevant_trail"]["quotes"]
     assert quoting_llm.requests_for("claims") == []
     assert result.provenance["claims"] == []
+    assert result.provenance["evidence_trail"] == whole_trail(result.provenance)
     assert "claims: none, as their request would take about " in caplog.text
     assert events_in(result.run_dir)[-1]["type"] == "run_finished"
 
@@ -387,6 +433,7 @@ def test_a_claims_call_that_fails_leaves_no_claims_and_the_run_finishes(
     result = run_memos(quoting_llm, tmp_path)
     assert result.answer == ANSWER
     assert result.provenance["claims"] == []
+    assert result.provenance["evidence_trail"] == whole_trail(result.provenance)
     assert len(quoting_llm.requests_for("claims")) == sends
     assert f"claims: none, as their call failed: {error}" in caplog.text
     events = events_in(result.run_dir)
@@ -395,7 +442,10 @@ def test_a_claims_call_that_fails_leaves_no_claims_and_the_run_finishes(
         "claims_finished",
         "run_finished",
     ]
-    assert events[-2]["claims"] == []
+    assert (events[-2]["claims"], events[-2]["evidence_trail"]) == (
+        [],
+        whole_trail(result.provenance),
+    )
     assert not (result.run_dir / "claims" / "error.txt").exists()
 
 
@@ -448,9 +498,11 @@ def test_claims_turned_off_make_no_call_no_folder_and_no_event(
     quoting_llm, tmp_path, events_in
 ):
     result = run_memos(quoting_llm, tmp_path, claims=False)
-    assert result.provenance["quotes"]
+    assert result.provenance["relevant_trail"]["quotes"]
     assert quoting_llm.requests_for("claims") == []
     assert result.provenance["claims"] == trace(result)["claims"] == []
+    assert result.provenance["evidence_trail"] == whole_trail(result.provenance)
+    assert trace(result)["evidence_trail"] == whole_trail(result.provenance)
     assert not (result.run_dir / "claims").exists()
     assert not any(e["type"].startswith("claims_") for e in events_in(result.run_dir))
     manifest = json.loads((result.run_dir / "manifest.json").read_text())
@@ -514,14 +566,42 @@ def test_trace_gives_the_saved_claims_whose_quotes_the_rules_trail_quotes(
     result = claimed(quoting_llm, tmp_path, (HALLORAN, ["q2"]), (MERROW, ["q4"]))
     traced = trace(result.run_dir, rule)
     assert traced["claims"] == result.provenance["claims"] != []
-    places = [place(quote) for quote in traced["quotes"]]
+    quotes = traced["relevant_trail"]["quotes"]
+    places = [place(quote) for quote in quotes]
     assert all(q in places for c in traced["claims"] for q in c["quotes"])
+    assert traced["evidence_trail"] == evidence(
+        "claims", traced["relevant_trail"]["documents"][:2], [quotes[1], quotes[3]]
+    )
 
 
-def test_a_folder_saved_before_claims_traces_with_none(quoting_llm, tmp_path):
-    result = claimed(quoting_llm, tmp_path, (HALLORAN, ["q2"]))
-    shutil.rmtree(result.run_dir / "claims")
-    assert trace(result)["claims"] == []
+def without_an_evidence_trail(folder: Path) -> None:
+    """``claims/result.json`` as r3context 0.6.45 and earlier wrote it."""
+    in_json("claims/result.json", lambda result: result.pop("evidence_trail"))(folder)
+
+
+def without_claims(folder: Path) -> None:
+    """A folder an r3con made before claims."""
+    shutil.rmtree(folder / "claims")
+
+
+@pytest.mark.parametrize(
+    ("older", "claims_kept"),
+    [(without_an_evidence_trail, True), (without_claims, False)],
+    ids=["claims-without-evidence-trail", "no-claims"],
+)
+@pytest.mark.parametrize("rule", RULES)
+def test_claims_saved_without_an_evidence_trail_or_none_trace_with_the_one_they_make(
+    quoting_llm, tmp_path, older, claims_kept, rule
+):
+    result = claimed(quoting_llm, tmp_path, (MERROW, []), (HALLORAN, ["q2"]))
+    asked = ask(result, "Who else?", completion=quoting_llm)
+    for folder in (result.run_dir, asked.run_dir):
+        assert folder is not None
+        before = trace(folder, rule)
+        assert before["evidence_trail"]["from"] == "claims"
+        older(folder)
+        unclaimed = {**before, "claims": [], "evidence_trail": whole_trail(before)}
+        assert trace(folder, rule) == (before if claims_kept else unclaimed)
 
 
 def test_an_ask_finds_the_claims_of_its_own_answer_on_its_own_model(
@@ -538,9 +618,20 @@ def test_an_ask_finds_the_claims_of_its_own_answer_on_its_own_model(
     assert user.startswith(f"<question>\nWho else?\n</question>\n<answer>\n{MERROW}\n")
     [claim] = asked.provenance["claims"]
     assert (claim["text"], claim["documents"]) == (MERROW, [result.document_ids[1]])
-    assert trace(asked)["claims"] == asked.provenance["claims"]
+    trail = asked.provenance["relevant_trail"]
+    assert asked.provenance["evidence_trail"] == evidence(
+        "claims", [trail["documents"][1]], [trail["quotes"][3]]
+    )
+    traced = trace(asked)
+    assert (traced["claims"], traced["evidence_trail"]) == (
+        asked.provenance["claims"],
+        asked.provenance["evidence_trail"],
+    )
     [finished] = [e for e in events_in(asked.run_dir) if e["type"] == "claims_finished"]
-    assert finished["claims"] == asked.provenance["claims"]
+    assert (finished["claims"], finished["evidence_trail"]) == (
+        asked.provenance["claims"],
+        asked.provenance["evidence_trail"],
+    )
     assert result.provenance["claims"] == trace(result)["claims"] != []
 
 
@@ -553,7 +644,15 @@ def test_a_run_that_failed_resumes_through_to_its_claims(quoting_llm, tmp_path):
     resumed = resume(run_dir, TWO_LINE_MEMOS, completion=quoting_llm)
     [claim] = resumed.provenance["claims"]
     assert claim["text"] == HALLORAN
-    assert trace(run_dir)["claims"] == resumed.provenance["claims"]
+    trail = resumed.provenance["relevant_trail"]
+    assert resumed.provenance["evidence_trail"] == evidence(
+        "claims", [trail["documents"][0]], [trail["quotes"][1]]
+    )
+    traced = trace(run_dir)
+    assert (traced["claims"], traced["evidence_trail"]) == (
+        resumed.provenance["claims"],
+        resumed.provenance["evidence_trail"],
+    )
 
 
 def test_a_run_stopped_before_its_claims_finished_resumes_from_reasoning(

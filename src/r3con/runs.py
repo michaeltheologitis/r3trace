@@ -64,17 +64,23 @@ Layout per ``logs/<run-folder>/``:
   ``parse-d{doc}`` call, or ``parse-d{doc}c{part}`` for a part, ``-retry-{n}`` added to
   a resend).
 - ``reasoning/`` (stage 3) — ``result.json`` (``{answer, provenance, path, fallback,
-  terminated_by, n_turns, turns, totals}`` — ``provenance`` is ``{summary_ids,
-  parse_ids, documents, quotes, trail}``, as :attr:`r3con.pipeline.Answer.provenance`
-  says, the trail ``{rule, nodes, edges}`` (:mod:`r3con.provenance`), ``path`` is
+  terminated_by, n_turns, turns, totals}`` — ``provenance`` is ``{relevant_trail}``,
+  the relevant trail ``{cited, rule, nodes, edges, documents, quotes}``, as
+  :attr:`r3con.pipeline.Answer.provenance` says (:mod:`r3con.provenance`), ``path`` is
   ``direct`` or ``coding``, and ``fallback`` says why the coding path ran when the
   config asked for direct, else ``null``) + ``calls.json`` + ``transcript.yaml``.
-  Its ``provenance`` has no ``claims``: they are found after it.
+  Its ``provenance`` has no ``claims`` and no ``evidence_trail``: they come after it.
+  r3context 0.6.45 and earlier wrote ``summary_ids`` and ``parse_ids`` at the top of
+  ``provenance``, beside whichever of ``documents``, ``quotes`` and ``trail`` they
+  gave; r3con reads those too.
 - ``claims/`` (after reasoning, unless the config turns claims off) — ``result.json``
-  (``{claims, totals}``, the answer's claims as
-  :attr:`r3con.pipeline.Answer.provenance` gives them, none when their call is not
-  sent, fails or is cancelled: :func:`r3con.stages.claims.find_claims`) +
-  ``calls.json`` + ``transcript.yaml``.
+  (``{claims, evidence_trail, totals}``, the answer's claims and its evidence trail
+  as :attr:`r3con.pipeline.Answer.provenance` gives them, no claims when their call
+  is not sent, fails or is cancelled: :func:`r3con.stages.claims.find_claims`) +
+  ``calls.json`` + ``transcript.yaml``. Its ``evidence_trail`` is written for those
+  who read the folder: :func:`r3con.trace` derives it again from the claims and the
+  relevant trail rather than read it, so a folder written without it traces the
+  same.
 - ``skipped.json`` — written when the run finishes, for reading only: every relevance
   note and parse it skipped, as its reply stayed unusable once its resends and
   re-rolls were spent, ``[]`` for none, each a :class:`r3con.pipeline.Skip` as JSON,

@@ -51,6 +51,7 @@ from pathlib import Path
 from typing import Any
 
 import r3con
+from r3con.provenance import AnswerProvenance, with_claims
 
 REPO = Path(__file__).resolve().parents[2]
 RUN_FOLDER = Path(__file__).resolve().parent / "sample" / "20261105T173546Z_bb4f0c37"
@@ -78,21 +79,23 @@ def memo_texts(run: Path, memos: Path) -> dict[str, str]:
 
 def provenance(
     folder: Path, saved: dict[str, Any], texts: dict[str, str]
-) -> dict[str, Any]:
+) -> AnswerProvenance:
     """The provenance of the answer saved in ``folder``, as r3con.trace gives it, each
-    quote's document_text read from its document's text in ``texts``. Before 0.6.5,
-    r3con saved only its citations; it saves its quotes since, its trail since 0.6.9,
-    and its documents since 0.6.33. The recorded run predates document_text, which
-    trace then gives as None."""
+    quote's document_text read from its document's text in ``texts``, and its evidence
+    trail made of those quotes (:func:`r3con.provenance.with_claims`). The recorded run
+    predates document_text, which trace then gives as None. A run before 0.6.5, as the
+    recorded one, saved only the answer's citations, which trace gives; one this r3con
+    makes saves its whole relevant trail, which trace gives too."""
     traced = r3con.trace(folder)
-    assert saved.items() <= traced.items(), (
-        f"{folder.name}: trace gives the saved provenance"
+    relevant = traced["relevant_trail"]
+    saved_trail = saved.get("relevant_trail")
+    same = (
+        saved == relevant["cited"] if saved_trail is None else saved_trail == relevant
     )
-    quotes = [
-        {**q, "document_text": texts[q["document"]][q["start"] : q["end"]]}
-        for q in traced["quotes"]
-    ]
-    return {**traced, "quotes": quotes}
+    assert same, f"{folder.name}: trace gives the saved provenance"
+    for quote in relevant["quotes"]:
+        quote["document_text"] = texts[quote["document"]][quote["start"] : quote["end"]]
+    return with_claims(relevant, traced["claims"])
 
 
 def summary(snippet: dict[str, Any], ids: dict[str, int]) -> dict[str, Any]:

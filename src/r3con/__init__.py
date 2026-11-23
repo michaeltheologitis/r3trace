@@ -6,7 +6,7 @@ answering it is built *per question*, at the moment you ask:
     >>> from r3con import r3con
     >>> result = r3con.run("Which supplier missed the most delivery windows?", docs)
     >>> print(result)                 # the answer
-    >>> result.provenance                    # the summaries, parses, documents, quotes, trail and claims
+    >>> result.provenance                    # its relevant trail, claims and evidence trail
     >>> result.relevant_context              # what each document contributed
     >>> result.structured_context            # the structured parse behind it
 

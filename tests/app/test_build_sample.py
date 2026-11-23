@@ -6,6 +6,7 @@ from r3con import Answer, ask, read_documents, run, settings
 from tests.app.build_sample import (
     APP_JS,
     MEMOS,
+    RUN_FOLDER,
     app_block,
     ask_entry,
     build_sample,
@@ -51,7 +52,8 @@ def test_a_run_and_ask_this_r3con_saves_build_with_their_saved_provenance(
 ) -> None:
     asked = ask(todays_run, "Who else?", completion=answering_llm)
     assert todays_run.run_dir is not None and asked.run_dir is not None
-    assert todays_run.provenance["quotes"] and todays_run.provenance["trail"]["edges"]
+    trail = todays_run.provenance["relevant_trail"]
+    assert trail["quotes"] and trail["edges"]
     built = build_sample(todays_run.run_dir, MEMOS)
     assert built["answer"]["provenance"] == todays_run.provenance
     assert ask_entry(asked.run_dir)["provenance"] == asked.provenance
@@ -61,7 +63,9 @@ def test_a_saved_trail_trace_does_not_give_fails_the_build(todays_run: Answer) -
     assert todays_run.run_dir is not None
     in_json(
         "reasoning/result.json",
-        lambda result: result["provenance"]["trail"].update(rule="another rule"),
+        lambda result: result["provenance"]["relevant_trail"].update(
+            rule="another rule"
+        ),
     )(todays_run.run_dir)
     with pytest.raises(AssertionError, match="trace gives the saved provenance"):
         build_sample(todays_run.run_dir, MEMOS)
@@ -115,3 +119,9 @@ def test_a_note_sent_twice_fails_the_build_naming_its_node(todays_run: Answer) -
     )
     with pytest.raises(ValueError, match=r"2 calls for r1-\d, drawn as one"):
         build_sample(todays_run.run_dir, MEMOS)
+
+
+def test_the_sample_is_a_folder_an_earlier_r3con_saved_so_its_build_reads_one():
+    saved = load(RUN_FOLDER / "reasoning/result.json")["provenance"]
+    assert list(saved) == ["summary_ids", "parse_ids"]
+    assert "evidence_trail" not in load(RUN_FOLDER / "claims/result.json")
