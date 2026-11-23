@@ -26,9 +26,10 @@ DEFAULT_PROMPTS = {
     "structuring/parsing": "v4",
     "reasoning/direct": "v5",
     CODING: "v4",
+    "claims": "v2",
 }
 DEFAULT_LABEL_PROMPTS = (
-    "prompts=(rel1=v3,rel2=v4,schema=v2,parse=v4,direct=v5,coding=v4,claims=v1)"
+    "prompts=(rel1=v3,rel2=v4,schema=v2,parse=v4,direct=v5,coding=v4,claims=v2)"
 )
 # Relevance prompts with a document-level form, the rest at v1.
 DOCUMENT_FORM_PROMPTS = {

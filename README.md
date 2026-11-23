@@ -248,8 +248,8 @@ print(quote["document_text"])  # Ardent missed 8 delivery windows, mostly in Aug
 With `evidence_level="document"`, `quotes` is empty.
 
 `result.provenance["claims"]` splits the answer into its claims (each
-sentence, list item or table row) and links each one to the evidence that
-supports it. Each claim has its `text`, from its `start` to its `end`
+sentence, clause, list item or table row) and links each one to the evidence
+that supports it. Each claim has its `text`, from its `start` to its `end`
 character in `result.answer`, the `documents` behind it by ID, and the
 `quotes` behind it, each by its `document`, `start` and `end`, as in the
 relevant trail's `quotes`:
