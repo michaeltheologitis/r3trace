@@ -77,8 +77,10 @@ Layout per ``logs/<run-folder>/``:
   (``{claims, evidence_trail, totals}``, the answer's claims and its evidence trail
   as :attr:`r3con.pipeline.Answer.provenance` gives them, no claims when their call
   is not sent, fails or is cancelled: :func:`r3con.stages.claims.find_claims`) +
-  ``calls.json`` + ``transcript.yaml``. r3con derives the evidence trail when it reads
-  a folder, so one written without it reads the same.
+  ``calls.json`` + ``transcript.yaml``. Its ``evidence_trail`` is written for those
+  who read the folder: :func:`r3con.trace` derives it again from the claims and the
+  relevant trail rather than read it, so a folder written without it traces the
+  same.
 - ``skipped.json`` — written when the run finishes, for reading only: every relevance
   note and parse it skipped, as its reply stayed unusable once its resends and
   re-rolls were spent, ``[]`` for none, each a :class:`r3con.pipeline.Skip` as JSON,

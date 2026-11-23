@@ -675,7 +675,9 @@ function serving(edit) {
 
 // app.js as it would be shipped with a sample of fewer memos, or with no recorded asks.
 const withFewerMemos = withSample((sample) => ({ ...sample, docs: sample.docs.slice(0, FEWER_MEMOS) }));
-const withNoAsks = (script) => script.replace(/const RECORDED_ASKS = \[[\s\S]*?\n\];/, 'const RECORDED_ASKS = [];');
+// app.js with `asks` as its RECORDED_ASKS.
+const withAsks = (script, asks) => script.replace(/const RECORDED_ASKS = \[[\s\S]*?\n\];/, () => `const RECORDED_ASKS = ${JSON.stringify(asks)};`);
+const withNoAsks = (script) => withAsks(script, []);
 
 // The sample's first parse holding its first record over and over, each record more than two lines of JSON, so past
 // LINES_SHOWN lines; and app.js with it.
@@ -705,7 +707,7 @@ async function introCounts(area, options) {
 function sourcesOf(sample, docIds, id) {
   const [kind, i] = id.split('-');
   const own = ['r1', 'r2', 'parsed'].includes(kind) ? [docIds[i]] : [];
-  const { summary_ids, parse_ids } = sample.answer.provenance;
+  const { summary_ids, parse_ids } = sample.answer.provenance.relevant_trail.cited;
   const cited = (ids, prefix) => ids.map((id) => `${prefix}-${docIndexIn(sample, id)}`);
   if (kind === 'answer') return [...cited(summary_ids, 'r2'), ...cited(parse_ids, 'parsed')];
   if (kind === 'parsed') return [...own, ...sample.parsed[i].provenance.map((id) => `r2-${docIndexIn(sample, id)}`)];
@@ -743,8 +745,8 @@ function provenanceFoldIn() {
   return { name: summary.textContent, open: fold.open, marker: getComputedStyle(summary, '::before').content, shown: fold.querySelector('.fold-body').checkVisibility() };
 }
 
-// What an answer over the sample cites, from its recorded provenance, as its popup names them: its round-2 summaries,
-// then its parses.
+// What an answer over the sample cites, from its relevant trail's `cited`, as its popup names them: its round-2
+// summaries, then its parses.
 const citedNames = (sample, { summary_ids, parse_ids }) => [
   ...summary_ids.map((id) => `${stem(docIndexIn(sample, id))} · round 2`),
   ...parse_ids.map((id) => `${stem(docIndexIn(sample, id))} · parsed`),
@@ -1034,16 +1036,14 @@ function recordEvents() {
   };
 }
 
-// Each answer in window.events, in the order they landed: its relevant trail's citations, documents, quotes and trail,
-// and the document ids of the run started last before it, which in these checks is the run it answers over.
+// Each answer in window.events, in the order they landed: its relevant trail, and the document ids of the run started
+// last before it, which in these checks is the run it answers over.
 function answersRead() {
   let ids = null;
   const read = [];
   for (const event of window.events) {
     if (event.type === 'run_started') ids = event.document_ids;
-    if (event.type !== 'reasoning_finished') continue;
-    const { cited, documents, quotes, rule, nodes, edges } = event.provenance.relevant_trail;
-    read.push({ ids, ...cited, documents, quotes, trail: { rule, nodes, edges } });
+    if (event.type === 'reasoning_finished') read.push({ ids, trail: event.provenance.relevant_trail });
   }
   return read;
 }
@@ -2062,10 +2062,10 @@ const withMemosInFolders = withSample((sample) => {
 function withFirstMemoUnasked(script) {
   const asks = recordedAsks();
   const [id] = recordedSample().ids;
-  const { trail } = asks[0].provenance;
+  const trail = asks[0].provenance.relevant_trail;
   trail.nodes = trail.nodes.filter((node) => !node.endsWith(id));
   trail.edges = trail.edges.filter((edge) => !edge.some((end) => end.endsWith(id)));
-  return script.replace(/const RECORDED_ASKS = \[[\s\S]*?\n\];/, () => `const RECORDED_ASKS = ${JSON.stringify(asks)};`);
+  return withAsks(script, asks);
 }
 // The pills shown, each by its node's name up to the first comma: a file's name, or "<name> folder".
 const pillsByName = async (page) => Object.fromEntries(Object.values(await page.evaluate(pillsOn)).map((pill) => [pill[2].split(', ')[0], pill]));
@@ -2107,35 +2107,6 @@ async function folderQuotes() {
   });
 }
 
-// r3con.trace's provenance of the sample's answer and of each recorded ask, as r3con gives it today (build_sample.py).
-const TODAYS_PROVENANCES = 'import json; from tests.app.build_sample import todays_provenances; print(json.dumps(todays_provenances()))';
-
-// app.js with the provenance of its SAMPLE's answer and of each of its RECORDED_ASKS as r3con gives it today, in place
-// of r3context 0.6.45's, which they hold.
-function withTodaysProvenance(script) {
-  const today = JSON.parse(execFileSync('uv', ['run', 'python', '-c', TODAYS_PROVENANCES], { cwd: REPO_DIR, encoding: 'utf8' }));
-  const asks = recordedAsks().map((ask, i) => ({ ...ask, provenance: today.asks[i] }));
-  const sampled = withSample((sample) => ({ ...sample, answer: { ...sample.answer, provenance: today.answer } }))(script);
-  return sampled.replace(/const RECORDED_ASKS = \[[\s\S]*?\n\];/, () => `const RECORDED_ASKS = ${JSON.stringify(asks)};`);
-}
-
-// What the page shows of the sample's answer, then of its first recorded follow-up: the lit trail, the answer's popup
-// and folds, the pills, the linked sentences, and the path the first one lights.
-async function provenanceShown(page) {
-  const shown = async (id) => ({ lit: await litOnPanel(page), popup: await inspect(page, id), folds: await page.evaluate(foldsIn), pills: await page.evaluate(pillsOn), claims: await page.evaluate(claimsShown) });
-  const answer = { ...(await shown('answer-0')), claim: await hoverClaim(page) };
-  await followUp(page, recordedAsks()[0].question);
-  const landed = await becomes(page, landedNode, 'answer-1');
-  return { answer, landed, ask: await shown('answer-1') };
-}
-
-async function earlierProvenance() {
-  const [earlier, today] = await shippedAndEdited('sample replay', {}, withTodaysProvenance, provenanceShown);
-  const name = "r3con's provenance as it gives it today opens as r3context 0.6.45's does: the same trail, popups, pills, sentences and a sentence's path, for the answer and a follow-up";
-  const drawn = Boolean(earlier?.landed && earlier.answer.lit.edges.length && earlier.answer.claims.length && earlier.answer.claim.hovered.lit);
-  check('sample replay', name, drawn && isDeepStrictEqual(today, earlier), JSON.stringify({ earlier: earlier?.answer.lit.edges.length, today: today?.answer.lit.edges.length }));
-}
-
 async function sampleReplay() {
   await withPage('sample replay', {}, async (page) => {
     const counts = {};
@@ -2152,11 +2123,11 @@ async function sampleReplay() {
     check('sample replay', 'the page holds a recorded sample', Boolean(sample));
     const lit = Object.keys(edges).filter((k) => edges[k].includes('lit')).sort();
     const onPath = await litNodes(page);
-    const expected = sample && trailOnPage(sample.answer.provenance.trail, sample.ids, docIds);
+    const expected = sample && trailOnPage(sample.answer.provenance.relevant_trail, sample.ids, docIds);
     const litName = "the lit nodes and lines are exactly the recorded answer's trail, as r3con walked it, named as the page names them";
     const litDetail = `${onPath.length} nodes and ${lit.length} lines lit; the trail has ${expected?.nodes.length} and ${expected?.edges.length}`;
     check('sample replay', litName, Boolean(sample) && isDeepStrictEqual({ nodes: onPath, edges: lit }, expected), litDetail);
-    const parses = (sample?.answer.provenance.parse_ids ?? []).map((id) => docIndexIn(sample, id));
+    const parses = (sample?.answer.provenance.relevant_trail.cited.parse_ids ?? []).map((id) => docIndexIn(sample, id));
     const citeNothing = parses.every((d) => !sample.parsed[d].provenance.length);
     const unlit = parses.every((d) => onPath.includes(`parsed-${d}`) && !lit.includes(`${docIds[d]}>parsed-${d}`));
     const reached = parses.every((d) => onPath.includes(docIds[d]) && lit.includes(`${docIds[d]}>r2-${d}`));
@@ -3482,7 +3453,7 @@ async function popupArea() {
     await inspect(page, 'schema');
     const schema = { label: await page.textContent(`${nodeSel('schema')} .label`), title: (await popup(page))?.title, name: await page.getAttribute(nodeSel('schema'), 'aria-label') };
     check('popup', "the proposed schema's node and popup are called schema", isDeepStrictEqual(schema, { label: 'schema', title: '● schema', name: 'schema, proposed schema' }), JSON.stringify(schema));
-    const cited = citedNames(sample, sample.answer.provenance);
+    const cited = citedNames(sample, sample.answer.provenance.relevant_trail.cited);
     await inspect(page, 'answer-0');
     const listed = await provenanceListed(page);
     check('popup', "the answer's provenance lists the round-2 nodes it drew on, then the parsed ones", isDeepStrictEqual(listed, cited), listed.join(' · '));
@@ -3846,7 +3817,7 @@ function touchingHalves(sample) {
 // The sample with its answer's trail also naming nodes the page has none of: the summary of a document it doesn't hold,
 // and a third round's summary of its first memo, now the only node citing that memo's round-2 summary.
 function trailBeyondPage(sample) {
-  const { trail } = sample.answer.provenance;
+  const trail = sample.answer.provenance.relevant_trail;
   const [id] = sample.ids;
   const [second, third, unknown] = [`summary:2:${id}`, `summary:3:${id}`, 'summary:2:ffffff'];
   trail.nodes.push(third, unknown, 'document:ffffff');
@@ -4054,7 +4025,7 @@ async function quotesArea() {
     const listed = isDeepStrictEqual(lists, [foldedList]) && isDeepStrictEqual(openedList, [{ ...foldedList, open: true, shown: true, marker: '"▾ "' }]);
     const listName = "under the answer the chat lists its trail's quotes, ▸ folded: N quotes from M documents; a click opens it to each document's name and its quotes, marked";
     check('quotes', listName, listed, JSON.stringify([lists, openedList].map((l) => l[0] && [l[0].open, l[0].shown, l[0].marker])));
-    const fromQuotes = quotesListed(sample.docs, sample.ids, sample.answer.provenance.quotes);
+    const fromQuotes = quotesListed(sample.docs, sample.ids, sample.answer.provenance.relevant_trail.quotes);
     check('quotes', "the sentences highlighted for the answer are exactly the quotes r3con recorded on its trail", isDeepStrictEqual(openedList[0]?.docs, fromQuotes), JSON.stringify(fromQuotes.map((doc) => doc.length - 1)));
     await page.click('.sentences .sentence >> nth=0');
     const fromChat = { title: (await popup(page))?.title, flash: (await page.evaluate(flashed))?.text };
@@ -4082,7 +4053,7 @@ async function quotesArea() {
     const ownName = "a follow-up lit shows its own trail's pills and file counts, and its chat lists its own quotes, folded";
     const own = isDeepStrictEqual(askPills, ask.pills) && isDeepStrictEqual(askFiles, ask.counts) && isDeepStrictEqual(askList, { line: ASK_QUOTED.line, open: false, shown: false, marker: '"▸ "', docs: ask.docs });
     check('quotes', ownName, own, JSON.stringify({ askPills, askList: askList?.line }));
-    const askQuoted = isDeepStrictEqual(askList?.docs, quotesListed(sample.docs, sample.ids, asks[0].provenance.quotes));
+    const askQuoted = isDeepStrictEqual(askList?.docs, quotesListed(sample.docs, sample.ids, asks[0].provenance.relevant_trail.quotes));
     check('quotes', "the sentences highlighted for a recorded follow-up are exactly the quotes r3con recorded on its trail", askQuoted, JSON.stringify(askList?.docs.map((doc) => doc.length - 1)));
     await inspect(page, docIds[ASK_QUOTED.title[0]]);
     const askMarks = (await page.evaluate(marksIn, '#inspector')).marks;
@@ -4215,7 +4186,7 @@ async function quotesArea() {
   await withPage('quotes', { before: serving(withSample(trailBeyondPage)) }, async (page) => {
     const docIds = await docIdsOf(page);
     const lit = await litOnPanel(page);
-    const expected = trailOnPage(trailBeyondPage(structuredClone(sample)).answer.provenance.trail, sample.ids, docIds);
+    const expected = trailOnPage(trailBeyondPage(structuredClone(sample)).answer.provenance.relevant_trail, sample.ids, docIds);
     await inspect(page, 'answer-0');
     const said = await page.textContent('#inspector');
     const [list] = await page.evaluate(sentenceLists);
@@ -5326,8 +5297,8 @@ async function answers() {
 async function answersOnTheRun(sample, asks) {
   await withPage('answers', {}, async (page) => {
     const docIds = await docIdsOf(page);
-    const runPath = trailOnPage(sample.answer.provenance.trail, sample.ids, docIds).edges;
-    const askPath = (k) => trailOnPage(asks[k].provenance.trail, sample.ids, docIds, `answer-${k + 1}`).edges;
+    const runPath = trailOnPage(sample.answer.provenance.relevant_trail, sample.ids, docIds).edges;
+    const askPath = (k) => trailOnPage(asks[k].provenance.relevant_trail, sample.ids, docIds, `answer-${k + 1}`).edges;
     const offered = await page.evaluate(composer);
     const offersAsk = isDeepStrictEqual(offered, { buttons: WITH_FOLLOW_UP });
     check('answers', 'after a run the composer offers follow-up, ⓘ and ask ⏎, and no stop', offersAsk, JSON.stringify(offered));
@@ -5349,13 +5320,13 @@ async function answersOnTheRun(sample, asks) {
     const linesWhileAskLit = await page.evaluate(answerLines);
 
     const askLog = await page.evaluate(logOf);
-    const { summary_ids, parse_ids } = asks[0].provenance;
+    const { summary_ids, parse_ids } = asks[0].provenance.relevant_trail.cited;
     const summary = `${RECORDED_FOLLOW_UP} · ${asks[0].model} · ${asks[0].totals.tokens.toLocaleString('en-US')} tokens · $`;
     const quoted = ASK_QUOTED.line;
     const told = isDeepStrictEqual(askLog.after, [asks[0].text, quoted]) && !askLog.open && askLog.folded.startsWith(`ready · ${asks[0].model} · $`);
     const shown = await inspect(page, 'answer-1');
     const rows = await page.$$eval('#inspector .row', (els) => els.map((r) => r.firstChild.textContent));
-    const askCited = citedNames(sample, asks[0].provenance);
+    const askCited = citedNames(sample, asks[0].provenance.relevant_trail.cited);
     await page.click('#inspector details.provenance > summary');
     const askFold = { ...(await page.evaluate(provenanceFoldIn)), listed: await provenanceListed(page) };
     const citesShown = askFold.name === `provenance ${askCited.length}` && askFold.shown && isDeepStrictEqual(askFold.listed, askCited);
@@ -5377,7 +5348,8 @@ async function answersOnTheRun(sample, asks) {
     const saysLit = isDeepStrictEqual(pressed, [['answer-0', 'true'], ['answer-1', 'false']]);
     check('answers', 'each answer node says with aria-pressed whether it is the lit one', saysLit, JSON.stringify(pressed));
     const linesWhileRunLit = await page.evaluate(answerLines);
-    const runCites = sample.answer.provenance.summary_ids.length + sample.answer.provenance.parse_ids.length;
+    const { summary_ids: runSummaries, parse_ids: runParses } = sample.answer.provenance.relevant_trail.cited;
+    const runCites = runSummaries.length + runParses.length;
     const askCites = summary_ids.length + parse_ids.length;
     const citeLines = { 'answer-0': runCites, 'answer-1': askCites };
     const faintFollows =
@@ -7416,7 +7388,7 @@ async function liveSkipInFolder(url) {
 const withSkips = withSample((sample) => {
   sample.rounds[1][EASTFIELD] = { summary: '', provenance: [], quotes: [], skipped: [{ part: null, reason: 'output context length' }] };
   sample.parsed = sample.parsed.map(({ parse }) => ({ parse: Object.fromEntries(Object.keys(parse).map((field) => [field, []])), provenance: [], skipped: [{ part: null, reason: 'schema error' }] }));
-  sample.answer.provenance.parse_ids = [];
+  sample.answer.provenance.relevant_trail.cited.parse_ids = [];
   return sample;
 });
 const SAMPLE_SKIPPED = [...Array.from({ length: SAMPLE_DOCS }, (_, d) => `parsed-${d}`), `r2-${EASTFIELD}`];
@@ -7551,7 +7523,7 @@ async function liveFolds(url, server) {
     const [answer] = await page.evaluate(answersRead);
     const expected = trailOnPage(answer.trail, answer.ids, fileNodes(FOLD_RUN.docs));
     const lit = await litOnPanel(page);
-    const cited = answer.summary_ids.map((id) => fileNode(answer.ids.indexOf(id)));
+    const cited = answer.trail.cited.summary_ids.map((id) => fileNode(answer.ids.indexOf(id)));
     const unfolded = cited.length > 0 && cited.every((id) => lit.nodes.includes(id));
     const trailName = "the answer's trail is lit along r3con's, through the cited documents' own rows between the folds";
     const between = isDeepStrictEqual(rows, FOLD_RUN_ROWS);
@@ -7744,7 +7716,7 @@ async function liveQuotes(url) {
     check('live', name, done && marked && listed && flash === partLine, `${JSON.stringify(roadworks)}; ${JSON.stringify(pills)}; ${list?.line}; flashed ${JSON.stringify(flash)}`);
     const [answer] = await page.evaluate(answersRead);
     const docs = memos.map((m) => ({ name: m.name, text: m.buffer.toString() }));
-    const fromQuotes = quotesListed(docs, answer.ids, answer.quotes);
+    const fromQuotes = quotesListed(docs, answer.ids, answer.trail.quotes);
     check('live', 'the sentences highlighted are exactly the quotes the reasoning_finished event carried', isDeepStrictEqual(list?.docs, fromQuotes), JSON.stringify(fromQuotes));
   });
 }
@@ -7812,7 +7784,7 @@ async function livePartQuotes(url) {
       );
     const oneOfTwo = summarized(1) && !summarized(2) && (await quotedAt(1)) && (await quotedAt(2));
     const docs = memos.map((m) => ({ name: m.name, text: m.buffer.toString() }));
-    const fromQuotes = quotesListed(docs, answer.ids, answer.quotes);
+    const fromQuotes = quotesListed(docs, answer.ids, answer.trail.quotes);
     const name = "a document read in two parts, each quoting a line, with only its first part on the trail, highlights only that part's quotes, as the reasoning_finished event's quotes say";
     check('live', name, done && oneOfTwo && isDeepStrictEqual(list?.docs, fromQuotes), `one part of two on the trail: ${oneOfTwo}; ${JSON.stringify(list?.docs)}; expected ${JSON.stringify(fromQuotes)}`);
   });
@@ -7954,7 +7926,7 @@ async function liveRoundsOf(url, rounds) {
     );
     await inspect(page, 'answer-0');
     const answerListed = await provenanceListed(page);
-    const answerCited = answer ? [...answer.summary_ids.map((id) => `${stem(at(id))} · round ${rounds}`), ...answer.parse_ids.map((id) => `${stem(at(id))} · parsed`)] : null;
+    const answerCited = answer ? [...answer.trail.cited.summary_ids.map((id) => `${stem(at(id))} · round ${rounds}`), ...answer.trail.cited.parse_ids.map((id) => `${stem(at(id))} · parsed`)] : null;
     const popupsName = `${run}: each round's popup opens, a later round's listing the summaries it cites of the round before, and the answer's its last round's`;
     check('live', popupsName, opened && isDeepStrictEqual(answerListed, answerCited), `${JSON.stringify(popups.map((p) => p.title))}; answer ${answerListed.join(' · ')}`);
   });
@@ -10126,7 +10098,7 @@ async function live() {
 try {
   documents = writeDocuments(DOCUMENT_SPECS);
   browser = await require('playwright').chromium.launch();
-  const areas = [load, beforeRun, folds, folders, folderQuotes, sampleReplay, earlierProvenance, chatLog, arrange, runView, filesNotText, filesAddFails, removeArea, trashArea, removeAllArea, answers, followUps, tabs, tabFiles, dropArea, stopArea, settings, popupArea, popupWords, popupHuge, quotesArea, claimsArea, skipsArea, gestures, scale, chatWidthArea, prototypeSaves, prototypeImports, live];
+  const areas = [load, beforeRun, folds, folders, folderQuotes, sampleReplay, chatLog, arrange, runView, filesNotText, filesAddFails, removeArea, trashArea, removeAllArea, answers, followUps, tabs, tabFiles, dropArea, stopArea, settings, popupArea, popupWords, popupHuge, quotesArea, claimsArea, skipsArea, gestures, scale, chatWidthArea, prototypeSaves, prototypeImports, live];
   for (const area of areas) await area();
 } catch (error) {
   check('setup', firstLine(error), false);

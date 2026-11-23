@@ -19,6 +19,7 @@ from litellm.exceptions import AuthenticationError, ContextWindowExceededError
 from pydantic import BaseModel
 
 from r3con import Answer
+from r3con.provenance import Trail
 
 _completion = litellm.completion
 
@@ -81,8 +82,7 @@ DIGITS_KEY = 123456789012345678
 KEYRING_FILE = "R3CON_TEST_KEYRING_FILE"
 # Below keyring's null store's, -1, and its failing one's, 0.
 BELOW_ANY_PICKED = -2
-# The keys of a relevant trail that hold its walk.
-WALK = ("rule", "nodes", "edges")
+WALK_KEYS = tuple(Trail.__annotations__)
 
 
 class GatewayKey(BaseModel):
@@ -532,7 +532,7 @@ def without_trail(provenance: Mapping[str, Any]) -> dict[str, Any]:
     """An answer's ``provenance`` without its relevant trail's walk, ``rule``,
     ``nodes`` and ``edges``, which ``test_provenance.py`` pins."""
     trail = provenance["relevant_trail"]
-    unwalked = {key: value for key, value in trail.items() if key not in WALK}
+    unwalked = {key: value for key, value in trail.items() if key not in WALK_KEYS}
     return {**provenance, "relevant_trail": unwalked}
 
 
@@ -542,19 +542,32 @@ def as_saved_before_claims(provenance: Mapping[str, Any]) -> dict[str, Any]:
     return {"relevant_trail": provenance["relevant_trail"]}
 
 
-def from_claims(
-    documents: list[dict[str, str]], quotes: list[dict[str, Any]]
+def evidence(
+    source: str, documents: list[dict[str, str]], quotes: list[dict[str, Any]]
 ) -> dict[str, Any]:
-    """An evidence trail its claims chose: ``documents`` and ``quotes``."""
-    return {"from": "claims", "documents": documents, "quotes": quotes}
+    """An evidence trail of ``documents`` and ``quotes``, from ``source``: ``"claims"``
+    when its claims chose them, ``"trail"`` when they are the whole relevant
+    trail's."""
+    return {"from": source, "documents": documents, "quotes": quotes}
 
 
-def from_trail(
-    documents: list[dict[str, str]], quotes: list[dict[str, Any]]
-) -> dict[str, Any]:
-    """An evidence trail that, no claim naming a document, is the relevant trail's
-    ``documents`` and ``quotes``."""
-    return {"from": "trail", "documents": documents, "quotes": quotes}
+def whole_trail(provenance: Mapping[str, Any]) -> dict[str, Any]:
+    """The evidence trail of an answer's ``provenance`` when no claim names a document:
+    its whole relevant trail's documents and quotes."""
+    trail = provenance["relevant_trail"]
+    return evidence("trail", trail["documents"], trail["quotes"])
+
+
+def as_r3context_0_6_45_saved(trail: Mapping[str, Any]) -> dict[str, Any]:
+    """A relevant ``trail`` as r3context 0.6.45 and earlier saved an answer's
+    provenance in reasoning's ``result.json``: its citations at the top, beside its
+    documents, quotes and trail."""
+    return {
+        **trail["cited"],
+        "documents": trail["documents"],
+        "quotes": trail["quotes"],
+        "trail": {key: trail[key] for key in WALK_KEYS},
+    }
 
 
 def named_documents(answer: Answer, *indices: int) -> list[dict[str, str]]:

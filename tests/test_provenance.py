@@ -52,21 +52,16 @@ def run_over(rounds) -> dict:
     return {"relevance": relevance, "names": NAMES}
 
 
-def provenance_of(
+def trail_of(
     rounds, summary_ids=(), parse_ids=(), parses=NO_PARSE_CITES, rule=DEFAULT_RULE
 ):
-    """The provenance of an answer citing ``summary_ids`` and ``parse_ids`` over
+    """The relevant trail of an answer citing ``summary_ids`` and ``parse_ids`` over
     :func:`run_over` ``rounds``, each document's parse citing what ``parses`` lists
     for it."""
     citations = {"summary_ids": list(summary_ids), "parse_ids": list(parse_ids)}
     return build_provenance(
         citations, parsing_provenance=parses, rule=rule, **run_over(rounds)
     )
-
-
-def trail_of(rounds, **cited) -> dict:
-    """The relevant trail of the answer :func:`provenance_of` gives."""
-    return provenance_of(rounds, **cited)["relevant_trail"]
 
 
 def places(quotes: list) -> list[tuple]:
@@ -127,34 +122,29 @@ def test_the_graph_holds_every_edge_from_the_answer_back_each_part_under_its_rou
 
 
 def test_the_default_trail_reaches_a_document_only_through_a_summary_of_it():
-    provenance = provenance_of(CITED_ROUNDS, summary_ids=["b"], parse_ids=["c"])
-    assert provenance == {
-        "relevant_trail": {
-            "cited": {"summary_ids": ["b"], "parse_ids": ["c"]},
-            "rule": "through-summaries",
-            "nodes": [
-                "answer",
-                "summary:2:b",
-                "parse:c",
-                "summary:1:a",
-                "document:b",
-                "document:a",
-            ],
-            "edges": [
-                ["answer", "summary:2:b", "cites"],
-                ["answer", "parse:c", "cites"],
-                ["summary:2:b", "summary:1:a", "cites"],
-                ["summary:2:b", "document:b", "summarizes"],
-                ["summary:1:a", "document:a", "summarizes"],
-            ],
-            "documents": [named("a"), named("b")],
-            "quotes": [
-                quoted("a", 0, 9, "A said x."),
-                quoted("b", 10, 19, "B said y."),
-            ],
-        }
+    trail = trail_of(CITED_ROUNDS, summary_ids=["b"], parse_ids=["c"])
+    assert trail == {
+        "cited": {"summary_ids": ["b"], "parse_ids": ["c"]},
+        "rule": "through-summaries",
+        "nodes": [
+            "answer",
+            "summary:2:b",
+            "parse:c",
+            "summary:1:a",
+            "document:b",
+            "document:a",
+        ],
+        "edges": [
+            ["answer", "summary:2:b", "cites"],
+            ["answer", "parse:c", "cites"],
+            ["summary:2:b", "summary:1:a", "cites"],
+            ["summary:2:b", "document:b", "summarizes"],
+            ["summary:1:a", "document:a", "summarizes"],
+        ],
+        "documents": [named("a"), named("b")],
+        "quotes": [quoted("a", 0, 9, "A said x."), quoted("b", 10, 19, "B said y.")],
     }
-    assert list(provenance["relevant_trail"]) == [
+    assert list(trail) == [
         "cited",
         "rule",
         "nodes",
@@ -201,7 +191,7 @@ def test_a_node_reached_twice_is_listed_once_and_both_edges_to_it_followed():
 
 def test_an_unknown_rule_is_refused_naming_the_known_ones():
     with pytest.raises(ValueError) as refused:
-        provenance_of(CITED_ROUNDS, rule="through-parses")
+        trail_of(CITED_ROUNDS, rule="through-parses")
     assert str(refused.value) == (
         "no provenance rule is named 'through-parses'; the rules are "
         "'through-summaries', 'parses-light-documents'."
@@ -440,7 +430,7 @@ def test_with_no_claim_citing_anything_the_evidence_trail_is_the_whole_trail(cla
 
 
 def test_an_answer_citing_nothing_has_an_empty_evidence_trail_from_its_trail():
-    provenance = with_claims(provenance_of(CITED_ROUNDS), [])
+    provenance = with_claims(trail_of(CITED_ROUNDS), [])
     assert provenance["evidence_trail"] == {
         "from": "trail",
         "documents": [],
@@ -462,15 +452,15 @@ def test_the_evidence_trail_follows_the_relevant_trail_under_any_rule(rule, docu
 
 
 def test_an_answers_provenance_is_its_relevant_trail_its_claims_then_its_evidence():
-    provenance = provenance_of(QUOTED_ROUNDS, summary_ids=EVERY_SUMMARY)
+    trail = trail_of(QUOTED_ROUNDS, summary_ids=EVERY_SUMMARY)
     claims = [claim("b", quotes=(("b", 0, 9),))]
-    answered = with_claims(provenance, claims)
+    answered = with_claims(trail, claims)
+    assert answered == {
+        "relevant_trail": trail,
+        "claims": claims,
+        "evidence_trail": evidence_trail(trail, claims),
+    }
     assert list(answered) == ["relevant_trail", "claims", "evidence_trail"]
-    assert answered["relevant_trail"] == provenance["relevant_trail"]
-    assert answered["claims"] == claims
-    assert answered["evidence_trail"] == evidence_trail(
-        provenance["relevant_trail"], claims
-    )
 
 
 def test_the_evidence_trails_entries_are_copies_of_the_relevant_trails():

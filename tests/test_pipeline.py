@@ -35,9 +35,8 @@ from tests.fakes import (
     as_saved_before_claims,
     citable_lists,
     citing,
+    evidence,
     first_line,
-    from_claims,
-    from_trail,
     is_later_round,
     memo_line,
     named_documents,
@@ -481,7 +480,7 @@ def test_the_answer_its_event_and_the_run_folder_quote_the_answers_trail(
             "quotes": quotes,
         },
         "claims": [claim],
-        "evidence_trail": from_claims(documents, quotes),
+        "evidence_trail": evidence("claims", documents, quotes),
     }
     saved = read_json(logger, "reasoning/result")["provenance"]
     assert saved == as_saved_before_claims(result.provenance)
@@ -517,7 +516,7 @@ def test_a_document_level_run_quotes_nothing_and_names_the_documents_its_trail_r
             "quotes": [],
         },
         "claims": [{**claim, "quotes": []}],
-        "evidence_trail": from_claims(documents, []),
+        "evidence_trail": evidence("claims", documents, []),
     }
     snippets = [
         snippet
@@ -570,7 +569,7 @@ def test_a_config_that_pins_reasoning_v2_still_answers(
             "quotes": [],
         },
         "claims": [],
-        "evidence_trail": from_trail([], []),
+        "evidence_trail": evidence("trail", [], []),
     }
     saved = read_json(logger, "reasoning/result")["provenance"]
     assert saved == as_saved_before_claims(result.provenance)
@@ -665,7 +664,7 @@ def test_the_default_config_answers_in_one_call_over_the_whole_stamped_parse(
             "quotes": [],
         },
         "claims": [],
-        "evidence_trail": from_trail(documents, []),
+        "evidence_trail": evidence("trail", documents, []),
     }
     assert (result.answer, without_trail(result.provenance)) == (
         "Halloran and Merrow.",
@@ -703,7 +702,7 @@ def test_the_coding_path_sends_the_coding_prompt_over_the_whole_stamped_parse(
             "quotes": [],
         },
         "claims": [],
-        "evidence_trail": from_trail([], []),
+        "evidence_trail": evidence("trail", [], []),
     }
     assert result.provenance["relevant_trail"]["nodes"] == ["answer"]
     reasoning = read_json(logger, "reasoning/result")

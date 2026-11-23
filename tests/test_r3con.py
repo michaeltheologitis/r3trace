@@ -24,6 +24,7 @@ from r3con import r3con as namespace
 from r3con.config import EVIDENCE_LEVELS, PROMPT_STAGES, REASONING_PATHS, load_config
 from r3con.documents import read_documents
 from r3con.pipeline import OtherDocuments
+from r3con.provenance import RULES
 from r3con.r3con import ask, resume, run, trace
 from tests.documents import write_pdf, write_tree
 from tests.fakes import (
@@ -35,15 +36,15 @@ from tests.fakes import (
     USAGE,
     Raw,
     a_parse_citation_short,
+    as_r3context_0_6_45_saved,
     as_saved_before_claims,
     asks_for_quotes,
     bad_key,
     cited_documents,
     citing,
+    evidence,
     failing_once,
     first_line,
-    from_claims,
-    from_trail,
     in_json,
     is_later_round,
     named_documents,
@@ -58,6 +59,7 @@ from tests.fakes import (
     snippets_without_quotes,
     stage_of,
     the_runs_own_files,
+    whole_trail,
     without_trail,
 )
 
@@ -358,7 +360,7 @@ def test_the_answer_cites_the_documents_it_used_in_the_result_and_the_run_folder
             "quotes": [],
         },
         "claims": [],
-        "evidence_trail": from_trail([], []),
+        "evidence_trail": evidence("trail", [], []),
     }
     assert result.relevance_provenance == [[], []]
     assert result.parsing_provenance == [[], []]
@@ -852,7 +854,7 @@ def test_an_ask_quotes_the_round_one_summaries_its_answer_reaches_through_citati
             "quotes": [merrow],
         },
         "claims": [claim],
-        "evidence_trail": from_claims(named_documents(asked, 1), [merrow]),
+        "evidence_trail": evidence("claims", named_documents(asked, 1), [merrow]),
     }
     assert asked.provenance == quoted_run.provenance
     assert asked.document_names == quoted_run.document_names == NAMES
@@ -900,7 +902,7 @@ def test_a_run_folder_whose_snippets_have_no_quotes_can_be_asked_and_quotes_noth
             "quotes": [],
         },
         "claims": [],
-        "evidence_trail": from_trail(documents, []),
+        "evidence_trail": evidence("trail", documents, []),
     }
 
 
@@ -996,9 +998,7 @@ def test_without_claims_a_parse_rules_evidence_trail_is_its_whole_relevant_trail
     relevant = lit["relevant_trail"]
     walked = cited_run.provenance["relevant_trail"]["documents"]
     assert relevant["documents"] == [*walked, *named_documents(cited_run, -1)]
-    assert lit["evidence_trail"] == from_trail(
-        relevant["documents"], relevant["quotes"]
-    )
+    assert lit["evidence_trail"] == whole_trail(lit)
 
 
 def test_trace_of_an_asks_folder_follows_the_asks_citations_through_the_runs_records(
@@ -1008,6 +1008,35 @@ def test_trace_of_an_asks_folder_follows_the_asks_citations_through_the_runs_rec
     asked = ask(cited_run, "Who else?", completion=answering_llm)
     assert trace(asked.run_dir) == trace(asked) == asked.provenance
     assert asked.provenance["relevant_trail"] != cited_run.provenance["relevant_trail"]
+
+
+def as_r3context_0_6_45_saved_it(result: dict) -> None:
+    """Reasoning's ``result.json`` as r3context 0.6.45 and earlier wrote it."""
+    trail = result["provenance"]["relevant_trail"]
+    result["provenance"] = as_r3context_0_6_45_saved(trail)
+
+
+def as_r3context_0_6_4_saved_it(result: dict) -> None:
+    """Reasoning's ``result.json`` as r3context 0.6.4 and earlier wrote it: its
+    provenance its citations alone."""
+    result["provenance"] = result["provenance"]["relevant_trail"]["cited"]
+
+
+@pytest.mark.parametrize(
+    "older",
+    [as_r3context_0_6_45_saved_it, as_r3context_0_6_4_saved_it],
+    ids=["0.6.45", "0.6.4"],
+)
+@pytest.mark.parametrize("rule", RULES)
+def test_an_answer_an_earlier_r3con_saved_traces_as_one_this_r3con_saves(
+    answering_llm, cited_run, older, rule
+):
+    asked = ask(cited_run, "Who else?", completion=answering_llm)
+    for folder in (cited_run.run_dir, asked.run_dir):
+        assert folder is not None
+        saved = trace(folder, rule)
+        in_json("reasoning/result.json", older)(folder)
+        assert trace(folder, rule) == saved
 
 
 def test_trace_reads_an_older_folder_whose_answer_cites_a_note_outside_its_context(
@@ -1225,6 +1254,44 @@ def test_trace_of_an_ask_names_the_folder_that_holds_the_malformed_file(
     assert str(refused.value) == (
         f"can't read {holder} as a run folder: KeyError: 'provenance'"
     )
+
+
+def a_claim_naming_no_documents(result: dict) -> None:
+    del result["claims"][0]["documents"]
+
+
+def a_claimed_quote_without_its_start(result: dict) -> None:
+    del result["claims"][0]["quotes"][0]["start"]
+
+
+def a_claim_naming_a_list(result: dict) -> None:
+    result["claims"][0]["documents"] = [["not", "an", "id"]]
+
+
+@pytest.mark.parametrize(
+    ("make_malformed", "error", "reason"),
+    [
+        (a_claim_naming_no_documents, "KeyError", "'documents'"),
+        (a_claimed_quote_without_its_start, "KeyError", "'start'"),
+        (a_claim_naming_a_list, "TypeError", "unhashable type: 'list'"),
+    ],
+    ids=["no-documents", "a-quote-without-start", "an-unhashable-id"],
+)
+@pytest.mark.parametrize("in_the_ask", [False, True], ids=["the-run", "the-ask"])
+def test_trace_refuses_malformed_saved_claims_in_one_line_naming_their_folder(
+    answering_llm, cited_run, make_malformed, error, reason, in_the_ask
+):
+    asked = ask(cited_run, "Who else?", completion=answering_llm)
+    holder = asked.run_dir if in_the_ask else cited_run.run_dir
+    in_json("claims/result.json", make_malformed)(holder)
+    with pytest.raises(ValueError) as refused:
+        trace(holder)
+    message = str(refused.value)
+    refusal = f"can't read {holder} as a run folder: {error}: "
+    assert message.startswith(refusal)
+    # Python words the reason, and 3.14 reworded the TypeError around these words.
+    assert reason in message.removeprefix(refusal)
+    assert "\n" not in message
 
 
 def test_trace_from_inside_an_asks_folder_reads_the_run_it_asked_over(

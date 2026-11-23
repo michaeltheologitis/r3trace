@@ -70,7 +70,7 @@ from r3con.provenance import (
     AnswerProvenance,
     Citations,
     Claim,
-    Provenance,
+    RelevantTrail,
     build_provenance,
     check_rule,
     with_claims,
@@ -212,13 +212,13 @@ def _sources_as_ids(
 
 def _cites_nothing() -> AnswerProvenance:
     """The provenance of an answer that cites nothing, and claims nothing."""
-    provenance = build_provenance(
+    relevant = build_provenance(
         reasoning.cites_nothing(),
         relevance=RelevantContext(records=[]),
         parsing_provenance=[],
         names={},
     )
-    return with_claims(provenance, [])
+    return with_claims(relevant, [])
 
 
 RELEVANCE_STAGE = "relevance"
@@ -474,7 +474,7 @@ def _spent(
 
 def _claims_stage(
     answer: str,
-    provenance: Provenance,
+    relevant: RelevantTrail,
     *,
     task: str,
     relevance: RelevantContext,
@@ -487,11 +487,11 @@ def _claims_stage(
     emit: Emit,
     resumed: bool = False,
 ) -> tuple[AnswerProvenance, StageRun | None]:
-    """``provenance`` with the claims of ``answer``
-    (:func:`r3con.provenance.with_claims`), and the stage run that found them, under
-    ``claims/``."""
+    """The provenance of ``answer``, whose relevant trail is ``relevant``, with its
+    claims (:func:`r3con.provenance.with_claims`), and the stage run that found them,
+    under ``claims/``."""
     if not config.claims:
-        return with_claims(provenance, []), None
+        return with_claims(relevant, []), None
     emit("claims_started")
     # No cancel here: a cancelled claims call leaves no claims, and the run finishes.
     with _recorded_stage(
@@ -506,7 +506,7 @@ def _claims_stage(
         claims = find_claims(
             question=task,
             answer=answer,
-            relevant_trail=provenance["relevant_trail"],
+            relevant_trail=relevant,
             relevance=relevance,
             document_ids=document_ids,
             evidence_level=config.evidence_level,
@@ -517,7 +517,7 @@ def _claims_stage(
             run=record.run,
             **llm_kwargs,
         )
-        answered = with_claims(provenance, claims)
+        answered = with_claims(relevant, claims)
         record.result = {"claims": claims, "evidence_trail": answered["evidence_trail"]}
     emit("claims_finished", claims=claims, evidence_trail=answered["evidence_trail"])
     return answered, record.run
@@ -937,18 +937,18 @@ def _build_and_answer(
             len(result.turns),
             _preview(result.answer),
         )
-        provenance = build_provenance(
+        relevant = build_provenance(
             result.citations,
             relevance=relevance,
             parsing_provenance=extraction.provenance,
             names=names,
         )
-        record.result = _reasoning_record(result, provenance)
+        record.result = _reasoning_record(result, relevant)
     stage_runs.append(record.run)
-    emit("reasoning_finished", **_reasoning_outcome(result, provenance))
+    emit("reasoning_finished", **_reasoning_outcome(result, relevant))
     answered, claims_run = _claims_stage(
         result.answer,
-        provenance,
+        relevant,
         task=task,
         relevance=relevance,
         document_ids=document_ids,
@@ -1641,7 +1641,7 @@ def read_representation(run_dir: Path) -> Representation:
         )
     with _readable(run_dir):
         built = _read_built(run_dir)
-        _provenance_over(built, _cites_all(built))
+        _relevant_trail_over(built, _cites_all(built))
     check_prompts(built.config)
     return built
 
@@ -1657,8 +1657,8 @@ def _cites_all(built: Representation) -> Citations:
     )
 
 
-def _provenance_over(built: Representation, citations: Citations) -> Provenance:
-    """The provenance of an answer over ``built`` that cites ``citations``."""
+def _relevant_trail_over(built: Representation, citations: Citations) -> RelevantTrail:
+    """The relevant trail of an answer over ``built`` that cites ``citations``."""
     return build_provenance(
         citations,
         relevance=built.relevance,
@@ -1698,14 +1698,16 @@ def read_answer(folder: Path, rule: str) -> AnswerProvenance:
     with _readable(run_dir):
         names, relevance = _names_and_relevance(run_dir)
         parsing = _read_json(run_dir / "structuring" / "parsing" / "result.json")
-        provenance = build_provenance(
+        relevant = build_provenance(
             citations,
             relevance=relevance,
             parsing_provenance=parsing["provenance"],
             names=names,
             rule=rule,
         )
-    return with_claims(provenance, claims)
+    # The claims are folder's, so one malformed is refused naming it.
+    with _readable(folder):
+        return with_claims(relevant, claims)
 
 
 def _saved_citations(result: Mapping[str, Any]) -> Citations:
@@ -1924,12 +1926,12 @@ def ask_pipeline(
             splits=splits,
             **llm_kwargs,
         )
-        provenance = _provenance_over(built, result.citations)
-        record.result = _reasoning_record(result, provenance)
-    emit("reasoning_finished", **_reasoning_outcome(result, provenance))
+        relevant = _relevant_trail_over(built, result.citations)
+        record.result = _reasoning_record(result, relevant)
+    emit("reasoning_finished", **_reasoning_outcome(result, relevant))
     answered, claims_run = _claims_stage(
         result.answer,
-        provenance,
+        relevant,
         task=task,
         relevance=built.relevance,
         document_ids=document_ids,
@@ -2035,25 +2037,25 @@ def _paths_holding_mask(data: Any, path: tuple[Any, ...]) -> Iterator[str]:
 
 
 def _reasoning_outcome(
-    result: reasoning.ReasoningResult, provenance: Provenance
+    result: reasoning.ReasoningResult, relevant: RelevantTrail
 ) -> dict[str, Any]:
-    """What reasoning concluded: its answer, with the answer's ``provenance``, its
-    path and fallback, as its ``result.json`` and its ``reasoning_finished`` event both
-    give them."""
+    """What reasoning concluded: its answer, with the answer's provenance before its
+    claims, ``{relevant_trail}``, its path and fallback, as its ``result.json`` and its
+    ``reasoning_finished`` event both give them."""
     return {
         "answer": result.answer,
-        "provenance": provenance,
+        "provenance": {"relevant_trail": relevant},
         "path": result.path,
         "fallback": result.fallback,
     }
 
 
 def _reasoning_record(
-    result: reasoning.ReasoningResult, provenance: Provenance
+    result: reasoning.ReasoningResult, relevant: RelevantTrail
 ) -> dict[str, Any]:
     """The fields of the reasoning stage's ``result.json``."""
     return {
-        **_reasoning_outcome(result, provenance),
+        **_reasoning_outcome(result, relevant),
         "terminated_by": result.terminated_by,
         "n_turns": len(result.turns),
         "turns": [
