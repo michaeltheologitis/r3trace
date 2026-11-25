@@ -2417,7 +2417,7 @@
   const DEFAULT_EVIDENCE = 'sentence';
   /** @type {EvidenceLevel[]} */
   const EVIDENCE_LEVELS = [DEFAULT_EVIDENCE, 'document'];
-  // The largest token cap r3con app takes, its MAX_TOKEN_CAP, and what the settings say of one it would refuse.
+  // r3con app's MAX_TOKEN_CAP.
   const MAX_TOKEN_CAP = 1_000_000;
   const CAP_LABEL = 'Token cap';
   const CAP_RULE = `a whole number from 1 to ${MAX_TOKEN_CAP.toLocaleString('en-US')}`;
@@ -6423,7 +6423,7 @@
     await playLive(tab, narr, '/api/runs', body, 'failed');
   }
 
-  // A request carries a token cap only when one is set: with none, r3con sends what it would without the setting.
+  // No cap sends nothing, so r3con runs as it would without the setting.
   /** @param {number | null | undefined} cap */
   const capped = (cap) => (cap ? { max_tokens: cap } : {});
 
@@ -7488,15 +7488,15 @@
   const pickedRounds = () => Number(roundsPick.value);
   const pickedEvidence = () => /** @type {EvidenceLevel} */ (evidencePick.value);
 
-  // A token cap as typed, or null for one r3con app would refuse: a whole number, in digits, from 1 to MAX_TOKEN_CAP.
+  // Thousands separators are taken, as the rule writes the largest cap with them.
   /** @param {string} text */
   function capOf(text) {
-    const digits = text.trim();
+    const digits = text.replace(/[\s,_]/g, '');
     const cap = Number(digits);
     return /^\d+$/.test(digits) && cap >= 1 && cap <= MAX_TOKEN_CAP ? cap : null;
   }
 
-  // The token cap every call of a run or follow-up is sent, null for none: the last the field held that r3con app takes.
+  // Apart from the field, which may hold a refused cap while it is typed.
   /** @type {number | null} */
   let tokenCap = null;
   const pickedCap = () => tokenCap;
@@ -7505,8 +7505,7 @@
     capField.value = String(tokenCap ?? '');
   }
 
-  // A cap typed holds at once, as a select's choice does, and an emptied field drops it; one r3con app would refuse
-  // changes nothing, and marks the field until it is fixed or left.
+  // Held at once, as a select's choice is.
   function onCapInput() {
     const typed = capField.value.trim();
     const cap = capOf(typed);
@@ -7517,8 +7516,7 @@
     else writeStored(TOKEN_CAP_KEY, String(cap));
   }
 
-  // Enter shows a refused cap's own error; leaving the field, or closing the settings, names it in the save line and
-  // puts back the cap that holds.
+  // Enter keeps a refused cap to fix; leaving puts back the cap that holds.
   /** @param {boolean} [onEnter] */
   function commitCap(onEnter = false) {
     const refused = !capField.validity.valid;
@@ -8026,7 +8024,8 @@
     });
     const askForm = $('ask-form');
     noteOver(askNote, askNoteButton, askForm, /** @type {Element} */ (askForm.querySelector('.ask-foot')));
-    noteOver($('cap-note'), $('cap-note-btn', HTMLButtonElement), $('cap-row'), $('cap-row'));
+    const [capNote, capNoteButton] = [$('cap-note'), $('cap-note-btn', HTMLButtonElement)];
+    noteOver(capNote, capNoteButton, $('cap-row'), $('cap-row'));
     modelPick.addEventListener('change', onPick);
     modelAdd.addEventListener('input', placeModel);
     modelAdd.addEventListener('keydown', (e) => e.key === 'Enter' && !e.isComposing && addModel());
@@ -8036,8 +8035,11 @@
     evidencePick.addEventListener('change', () => writeStored(EVIDENCE_KEY, evidencePick.value));
     capField.addEventListener('input', onCapInput);
     capField.addEventListener('keydown', (e) => e.key === 'Enter' && !e.isComposing && commitCap(true));
-    // Switching to another app leaves no field.
-    capField.addEventListener('focusout', () => document.hasFocus() && commitCap());
+    const toCapNote = (/** @type {EventTarget | null} */ to) => to === capNoteButton || (to instanceof Node && capNote.contains(to));
+    // Switching to another app, or to ⓘ to read the rule, leaves no field.
+    capField.addEventListener('focusout', (e) => document.hasFocus() && !toCapNote(e.relatedTarget) && commitCap());
+    // WebKit focuses no clicked button, so a click on ⓘ would otherwise leave the field with no relatedTarget.
+    capNoteButton.addEventListener('mousedown', (e) => e.preventDefault());
     questionEl.addEventListener('input', readyStatus);
 
     for (const id of ['file-input', 'folder-input']) {

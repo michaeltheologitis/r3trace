@@ -258,12 +258,18 @@ const CAP_NOTE = [
 ];
 const CAP = 8192;
 const OTHER_CAP = 4096;
-// What the field refuses, none a whole number from 1 to r3con app's MAX_TOKEN_CAP in digits, and what the settings say.
-const REFUSED_CAPS = ['0', '-1', '2.5', '1e4', '8,192', 'abc', '1000001'];
+// None is a whole number from 1 to r3con app's MAX_TOKEN_CAP.
+const REFUSED_CAPS = ['0', '-1', '2.5', '8.192', '1e4', 'abc', '1000001', '1,000,001'];
 const CAP_REFUSED = 'Token cap · needs a whole number from 1 to 1,000,000';
-// What storage may hold that reads as no cap, and a cap typed loosely, kept as its number.
 const STORED_REFUSED_CAPS = ['0', 'abc', '2.5', '1000001'];
-const LOOSE_CAP = [' 0128 ', '128'];
+// Each typed with spaces, leading zeros or thousands separators, and the cap it holds as.
+const LOOSE_CAPS = [
+  [' 0128 ', '128'],
+  ['8,192', '8192'],
+  ['16 384', '16384'],
+  ['32_768', '32768'],
+  ['1,000,000', '1000000'],
+];
 // Frames drawn while a run's request is held, before r3con app has said anything of the run.
 const HELD_FRAMES = 3;
 const SIMULATED_DONE = /^● done · simulated run · .+ · nothing was sent$/;
@@ -3408,7 +3414,7 @@ async function evidenceSetting(page, checkAt) {
   checkAt(storedName, isDeepStrictEqual(shown, STORED_EVIDENCE), JSON.stringify(shown));
 }
 
-// In-page: the token cap field's value, placeholder and validity, what describes it, and what storage holds at `key`.
+// In-page: the token cap field's state, and what storage holds at `key`.
 function capControl(key) {
   const field = document.getElementById('token-cap');
   let stored;
@@ -3420,8 +3426,7 @@ function capControl(key) {
   return { value: field.value, placeholder: field.placeholder, valid: field.validity.valid, describedBy: field.getAttribute('aria-describedby'), stored };
 }
 
-// In-page, in the open settings: whether the token cap row comes right after the rounds row, below it, starting its
-// label and field where that row starts its label and select, its label, ⓘ and field on one line, ⓘ after the label.
+// In-page: whether the token cap row follows the rounds row, lined up with it, its label, ⓘ and field on one line.
 function capUnderRounds() {
   const [field, rounds] = [document.getElementById('token-cap'), document.getElementById('rounds')];
   const [row, roundsRow] = [field.parentElement, rounds.parentElement];
@@ -3437,8 +3442,7 @@ function capUnderRounds() {
   };
 }
 
-// In-page: the token cap's ⓘ note's state, its text, whether it sits over the cap's row as wide as it and in view,
-// and whether the settings are open.
+// In-page: the token cap's ⓘ note's state and text, where it sits, and whether the settings are open.
 function capNoteShown(slack) {
   const note = document.getElementById('cap-note');
   const button = document.getElementById('cap-note-btn');
@@ -3461,8 +3465,6 @@ async function setCap(page, cap) {
   await page.keyboard.press('Escape');
 }
 
-// The token cap setting: a field under summary rounds, empty by default, with an ⓘ note; a cap typed holds at once and
-// after a reload, an emptied field holds none, and one r3con app would refuse is refused, saying why.
 async function capSetting(page, checkAt) {
   const control = () => page.evaluate(capControl, TOKEN_CAP_KEY);
   const said = () => page.textContent('#settings-saved');
@@ -3528,10 +3530,15 @@ async function capSetting(page, checkAt) {
   const none = (state) => state.value === '' && state.stored === null && state.valid;
   checkAt('emptying the field drops the cap at once, and after a reload it is still empty', none(emptied) && none(emptiedKept), JSON.stringify({ emptied, emptiedKept }));
 
-  await page.fill('#token-cap', LOOSE_CAP[0]);
-  await page.press('#token-cap', 'Tab');
-  const loose = await control();
-  checkAt(`a cap typed as "${LOOSE_CAP[0]}" holds as ${LOOSE_CAP[1]}, which the field shows once left`, held(loose, LOOSE_CAP[1]), JSON.stringify(loose));
+  const loose = [];
+  for (const [cap, number] of LOOSE_CAPS) {
+    await page.fill('#token-cap', cap);
+    await page.press('#token-cap', 'Tab');
+    const state = await control();
+    if (!held(state, number)) loose.push({ cap, ...state });
+  }
+  const looseName = `a cap typed loosely (${LOOSE_CAPS.map(([cap]) => `"${cap}"`).join(', ')}) holds as its number, which the field shows once left`;
+  checkAt(looseName, loose.length === 0, JSON.stringify(loose));
 
   await page.fill('#token-cap', String(OTHER_CAP));
   const refusals = [];
@@ -3542,7 +3549,19 @@ async function capSetting(page, checkAt) {
     refusals.push({ cap, marked: !marked.valid && marked.stored === String(OTHER_CAP), left: await control(), said: await said() });
   }
   const refusedOnLeaving = refusals.every(({ marked, left, said: line }) => marked && held(left, String(OTHER_CAP)) && line === CAP_REFUSED);
-  checkAt(`a cap r3con app would refuse (${REFUSED_CAPS.join(', ')}) is marked invalid as typed and never stored; leaving the field says why and puts back the cap that holds`, refusedOnLeaving, JSON.stringify(refusals.filter(({ marked, left, said: line }) => !marked || !held(left, String(OTHER_CAP)) || line !== CAP_REFUSED)));
+  checkAt(`a cap r3con app would refuse (${REFUSED_CAPS.join(' ')}) is marked invalid as typed and never stored; leaving the field says why and puts back the cap that holds`, refusedOnLeaving, JSON.stringify(refusals.filter(({ marked, left, said: line }) => !marked || !held(left, String(OTHER_CAP)) || line !== CAP_REFUSED)));
+
+  await page.fill('#token-cap', REFUSED_CAPS[0]);
+  await page.click('#cap-note-btn');
+  const clicked = { ...(await control()), open: (await shownNote()).open };
+  await page.click('#cap-note-btn');
+  await page.focus('#token-cap');
+  await page.keyboard.press('Shift+Tab');
+  const tabbed = { ...(await control()), focused: await focusedId(page) };
+  await page.focus('#token-cap');
+  const toFix = (state) => state.value === REFUSED_CAPS[0] && !state.valid && state.stored === String(OTHER_CAP);
+  const readName = 'a refused cap stays in the field to fix while ⓘ is clicked, opening its note, or reached with Shift+Tab, to read the rule';
+  checkAt(readName, toFix(clicked) && clicked.open && toFix(tabbed) && tabbed.focused === 'cap-note-btn', JSON.stringify({ clicked, tabbed }));
 
   await page.fill('#token-cap', REFUSED_CAPS[0]);
   await page.press('#token-cap', 'Enter');
@@ -8770,8 +8789,7 @@ async function liveNames(url) {
 // The run's manifest, as r3con wrote it in its folder, which the run's first event names.
 const runManifest = async (url, runId) => JSON.parse(readFileSync(join((await runStarted(url, runId)).run_dir, 'manifest.json'), 'utf8'));
 
-// A token cap set in the settings goes with each run and follow-up as the field holds it when each is sent, and none
-// once the field is emptied.
+// Each run and follow-up is sent the cap the field holds as it is sent.
 async function liveTokenCap(url) {
   await withPage('live', { url, sample: false, memos: true }, async (page) => {
     const posts = [];
