@@ -14,7 +14,7 @@ Layout per ``logs/<run-folder>/``:
   snapshot — ``r3con_version`` and ``litellm_version``, the installed versions, the
   task, ``n_docs``, ``context_chars`` (the documents' characters together),
   ``run_folder``, a ``config`` block (the resolved :class:`RunConfig` — model,
-  relevance_rounds, prompts, params, …), ``litellm_model`` (the model string exactly as
+  summary_rounds, prompts, params, …), ``litellm_model`` (the model string exactly as
   litellm was called with it, where ``config`` keeps only the bare name), ``sources``
   (the file the config and each prompt came from), a ``settings`` block (the runtime
   knobs), and ``created``, when it was written. Written first, so a crashed task is

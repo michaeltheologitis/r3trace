@@ -80,14 +80,14 @@ a reload reads.
   ``MAX_ZIP_ENTRIES`` entries, or whose documents would unzip to more than
   ``MAX_ZIP_BYTES``, is refused (422).
 - ``POST /api/runs`` (``{question, model, endpoint?, documents: [text, ...], names?:
-  [name, ...], relevance_rounds?, evidence_level?}``) starts ``r3con.run`` and answers
+  [name, ...], summary_rounds?, evidence_level?}``) starts ``r3con.run`` and answers
   ``{run_id}``;
   ``GET /api/runs/{run_id}/events`` streams its events as ``text/event-stream``, from
   the first, until ``run_finished`` or ``run_failed``. ``names``, one per document, are
   the documents' names, a name given again numbered (``r3con.documents.unique_names``:
   ``notes.txt (2)``); without them, r3con names the documents by index.
-  ``relevance_rounds``, from 1 to ``MAX_RELEVANCE_ROUNDS``, is how many relevance
-  rounds the run builds its representation over, ``DEFAULT_RELEVANCE_ROUNDS`` if not
+  ``summary_rounds``, from 1 to ``MAX_SUMMARY_ROUNDS``, is how many summary
+  rounds the run builds its representation over, ``DEFAULT_SUMMARY_ROUNDS`` if not
   given. ``evidence_level`` is ``"sentence"``, for relevance summaries that quote the
   sentences they are based on, or ``"document"``, for summaries that quote none, whose
   trail still reaches the documents; r3con's config decides it if not given. An ask
@@ -364,8 +364,8 @@ NOT_ONE_INDEX_EACH = (
     "must give each document one index, 0 to n - 1, and names.json a name"
 )
 # r3con's default config runs two rounds; each one more is another call per document.
-DEFAULT_RELEVANCE_ROUNDS = 2
-MAX_RELEVANCE_ROUNDS = 4
+DEFAULT_SUMMARY_ROUNDS = 2
+MAX_SUMMARY_ROUNDS = 4
 CONTINUE_REFUSALS = {
     "going": "This run is still going: try again once it has stopped.",
     "finished": "This run has finished: ask it a new question instead.",
@@ -436,9 +436,9 @@ class RunRequest(BaseModel):
     endpoint: Endpoint | None = None
     documents: list[Text] = Field(min_length=1)
     names: list[Text] | None = None
-    relevance_rounds: Annotated[
-        int, Field(ge=1, le=MAX_RELEVANCE_ROUNDS, strict=True)
-    ] = DEFAULT_RELEVANCE_ROUNDS
+    summary_rounds: Annotated[int, Field(ge=1, le=MAX_SUMMARY_ROUNDS, strict=True)] = (
+        DEFAULT_SUMMARY_ROUNDS
+    )
     evidence_level: EvidenceLevel | None = None
     _one_name_each = field_validator("names")(_one_per_document)
 
@@ -474,9 +474,9 @@ class ImportedConfig(RunConfig):
     ``UNIMPORTED``."""
 
     name: Annotated[str, StringConstraints(pattern=CONFIG_NAME)] = DEFAULT_CONFIG
-    relevance_rounds: Annotated[
-        int, Field(ge=1, le=MAX_RELEVANCE_ROUNDS, strict=True)
-    ] = DEFAULT_RELEVANCE_ROUNDS
+    summary_rounds: Annotated[int, Field(ge=1, le=MAX_SUMMARY_ROUNDS, strict=True)] = (
+        DEFAULT_SUMMARY_ROUNDS
+    )
     prompts: dict[
         PromptStage, Annotated[str, StringConstraints(pattern=PROMPT_VERSION)]
     ] = Field(default_factory=dict)
@@ -980,7 +980,7 @@ async def start_run(request: Request) -> Response:
         body.question,
         _named(body),
         model=body.model,
-        relevance_rounds=body.relevance_rounds,
+        summary_rounds=body.summary_rounds,
         evidence_level=body.evidence_level,
         logs_dir=state.logs_dir,
         **_model_options(state, body.model, body.endpoint),

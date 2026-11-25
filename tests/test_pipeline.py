@@ -71,7 +71,7 @@ STAGE_FOLDERS = {
 CONFIG = {
     "name": "test",
     "model": MODEL,
-    "relevance_rounds": 2,
+    "summary_rounds": 2,
     "prompts": {
         **dict.fromkeys(PROMPT_STAGES, "v1"),
         "relevance/first-round": "v3",
@@ -844,7 +844,7 @@ def test_every_record_carries_its_documents_id_a_split_documents_parts_included(
 
 @pytest.mark.parametrize("rounds", [1, 3])
 def test_each_document_is_read_once_per_configured_round(answering_llm, rounds):
-    answer(answering_llm, relevance_rounds=rounds)
+    answer(answering_llm, summary_rounds=rounds)
     assert len(answering_llm.requests_for("relevance")) == rounds * len(DOCS)
 
 
@@ -853,9 +853,7 @@ def test_nothing_is_pruned_with_fewer_than_two_rounds(answering_llm, tmp_path, r
     logger = TaskLogger("run", root=tmp_path)
     llm = answering_llm.answers(relevance=silent_when(lambda request: True))
     events = []
-    answer(
-        llm, logger, documents=THREE, relevance_rounds=rounds, on_event=events.append
-    )
+    answer(llm, logger, documents=THREE, summary_rounds=rounds, on_event=events.append)
     parsed_memos = sorted(first_line(r) for r in llm.requests_for("parsing"))
     assert parsed_memos == sorted(THREE)
     assert "documents_pruned" not in [e["type"] for e in events]
@@ -873,7 +871,7 @@ def test_a_document_is_pruned_after_the_first_round_from_2_on_its_note_is_empty(
     logger = TaskLogger("run", root=tmp_path)
     events = []
     result = answer(
-        llm, logger, documents=THREE, relevance_rounds=rounds, on_event=events.append
+        llm, logger, documents=THREE, summary_rounds=rounds, on_event=events.append
     )
     halloran = result.document_ids[0]
     reads = Counter(first_line(r) for r in llm.requests_for("relevance"))
@@ -913,7 +911,7 @@ def test_each_rounds_pruning_is_reported_once_it_is_in_and_its_documents_after_n
     result = answer(
         answering_llm.answers(relevance=silent),
         documents=THREE,
-        relevance_rounds=4,
+        summary_rounds=4,
         on_event=events.append,
     )
     halloran, _, calder = result.document_ids
@@ -1008,7 +1006,7 @@ def pruned_everything(request, answering_llm, tmp_path):
         llm,
         logger,
         documents=TWO_LINE_MEMOS,
-        relevance_rounds=rounds,
+        summary_rounds=rounds,
         on_event=events.append,
     )
     return llm, logger, result, events
@@ -1400,7 +1398,7 @@ def test_with_one_round_a_skipped_note_leaves_no_note_and_the_memo_is_parsed(
             reading("Merrow memo"), no_summary, ANSWERING["relevance"]
         )
     )
-    result = answer(llm, documents=THREE, relevance_rounds=1)
+    result = answer(llm, documents=THREE, summary_rounds=1)
     assert result.relevant_context == [
         "Notes on Halloran memo.",
         "",
