@@ -34,6 +34,7 @@ from r3con.app.server import (
     KEYLESS_SERVER_KEY,
     MAC_APP_KEY_SERVICE,
     MAX_SUMMARY_ROUNDS,
+    MAX_TOKEN_CAP,
     MAX_ZIP_BYTES,
     MAX_ZIP_ENTRIES,
     NO_SAVE_DIALOG,
@@ -71,8 +72,12 @@ from tests.fakes import (
     SCHEMA_REPLY,
     FakeKeyring,
     FakeLLM,
+    Request,
+    Stage,
     a_parse_citation_short,
+    citing,
     in_json,
+    quoting_its_first_line_and_citing_all_shown,
     reading,
     silent_when,
     stage_of,
@@ -167,6 +172,23 @@ TOO_MANY_ROUNDS = (
 )
 NOT_A_ROUND_COUNT = "summary_rounds: Input should be a valid integer"
 NOT_AN_EVIDENCE_LEVEL = "evidence_level: Input should be 'sentence' or 'document'"
+CAP = 64
+OTHER_CAP = 128
+NOT_A_CAP = "max_tokens: Input should be a valid integer"
+# Each token cap a run or an ask refuses, and why.
+REFUSED_CAPS = [
+    ({"max_tokens": 0}, "max_tokens: Input should be greater than or equal to 1"),
+    (
+        {"max_tokens": MAX_TOKEN_CAP + 1},
+        f"max_tokens: Input should be less than or equal to {MAX_TOKEN_CAP}",
+    ),
+    ({"max_tokens": "64"}, NOT_A_CAP),
+    ({"max_tokens": 64.0}, NOT_A_CAP),
+    ({"max_tokens": True}, NOT_A_CAP),
+]
+# A param a config file where the server runs may set, sent beside a cap.
+CONFIG_PARAMS = {"seed": 7}
+OTHER_MODEL = "anthropic/claude-sonnet-5-5"
 ANSWER = {
     "answer": "Northgate",
     "provenance_ids": {"summary_ids": [], "parse_ids": []},
@@ -288,6 +310,18 @@ def llm() -> FakeLLM:
 
 
 @pytest.fixture
+def claiming_llm(
+    answering_llm: FakeLLM, shown_ids: Callable[[Request], list[str]]
+) -> FakeLLM:
+    """A model a run calls in every stage over, claims and linking too: each summary
+    quotes its memo's first line, and the answer cites every summary."""
+    return answering_llm.answers(
+        relevance=quoting_its_first_line_and_citing_all_shown(shown_ids),
+        reasoning=citing("Northgate logged the most.", slice(None)),
+    )
+
+
+@pytest.fixture
 def held_llm(llm: FakeLLM) -> FakeLLM:
     """``llm``, holding every request until its gate opens."""
     llm.gate.clear()
@@ -328,8 +362,28 @@ def memos() -> list[str]:
     return [path.read_text() for path in sorted(MEMOS.iterdir())]
 
 
-def run_body(model: str = MODEL, endpoint: str | None = None) -> dict[str, Any]:
-    body = {"question": QUESTION, "model": model, "documents": memos()}
+def capped(request: Request) -> dict[str, Any]:
+    """The token cap ``request`` was sent, as the params r3con sends it in, if any."""
+    return {name: request[name] for name in ("max_tokens",) if name in request}
+
+
+def with_config_params(params: dict[str, Any]) -> None:
+    """A config file where the server runs, the default with ``params``."""
+    config = yaml.safe_load((CONFIGS_DIR / "default.yaml").read_text())
+    Path("configs").mkdir()
+    Path("configs", "default.yaml").write_text(
+        yaml.safe_dump({**config, "params": params})
+    )
+
+
+def manifest_of(folder: str) -> dict[str, Any]:
+    return json.loads((Path(folder) / "manifest.json").read_text())
+
+
+def run_body(
+    model: str = MODEL, endpoint: str | None = None, **fields: Any
+) -> dict[str, Any]:
+    body = {"question": QUESTION, "model": model, "documents": memos(), **fields}
     return body if endpoint is None else {**body, "endpoint": endpoint}
 
 
@@ -343,9 +397,9 @@ def events_in(stream: str) -> list[dict[str, Any]]:
 
 
 def start_run(
-    client: TestClient, model: str = MODEL, endpoint: str | None = None
+    client: TestClient, model: str = MODEL, endpoint: str | None = None, **fields: Any
 ) -> str:
-    response = client.post("/api/runs", json=run_body(model, endpoint))
+    response = client.post("/api/runs", json=run_body(model, endpoint, **fields))
     assert response.status_code == 202, response.text
     return response.json()["run_id"]
 
@@ -369,9 +423,9 @@ def ask_events(
 
 
 def finished_run(
-    client: TestClient, model: str = MODEL, endpoint: str | None = None
+    client: TestClient, model: str = MODEL, endpoint: str | None = None, **fields: Any
 ) -> str:
-    run_id = start_run(client, model, endpoint)
+    run_id = start_run(client, model, endpoint, **fields)
     last = run_events(client, run_id)[-1]
     assert last["type"] == "run_finished", last
     return run_id
@@ -1224,6 +1278,127 @@ def test_a_run_reads_at_the_evidence_level_sent(
     assert events[-1]["type"] == "run_finished"
 
 
+@pytest.mark.parametrize(
+    ("sent", "params"),
+    [({}, {}), ({"max_tokens": CAP}, {"max_tokens": CAP})],
+    ids=["none", "capped"],
+)
+def test_every_call_of_every_stage_of_a_run_is_sent_its_cap_and_no_other(
+    client: TestClient,
+    claiming_llm: FakeLLM,
+    sent: dict[str, Any],
+    params: dict[str, int],
+):
+    events = run_events(client, start_run(client, **sent))
+    requests = claiming_llm.requests
+    assert events[-1]["type"] == "run_finished"
+    assert {stage_of(request) for request in requests} == set(get_args(Stage))
+    assert [capped(request) for request in requests] == [params] * len(requests)
+    assert manifest_of(events[0]["run_dir"])["config"]["params"] == params
+
+
+def test_a_runs_cap_is_sent_beside_the_params_of_the_config_it_runs_under(
+    client: TestClient, llm: FakeLLM
+):
+    with_config_params(CONFIG_PARAMS)
+    events = run_events(client, start_run(client, max_tokens=CAP))
+    params = {**CONFIG_PARAMS, "max_tokens": CAP}
+    sent = [{name: request.get(name) for name in params} for request in llm.requests]
+    assert events[-1]["type"] == "run_finished"
+    assert sent == [params] * len(llm.requests)
+    assert manifest_of(events[0]["run_dir"])["config"]["params"] == params
+
+
+@pytest.mark.parametrize(
+    ("run_cap", "ask_cap", "params", "overridden"),
+    [
+        ({}, {}, {}, False),
+        ({"max_tokens": CAP}, {}, {}, True),
+        ({}, {"max_tokens": OTHER_CAP}, {"max_tokens": OTHER_CAP}, True),
+        (
+            {"max_tokens": CAP},
+            {"max_tokens": OTHER_CAP},
+            {"max_tokens": OTHER_CAP},
+            True,
+        ),
+    ],
+    ids=["neither", "run-only", "ask-only", "both"],
+)
+def test_a_follow_up_is_sent_its_own_cap_whatever_its_runs(
+    client: TestClient,
+    claiming_llm: FakeLLM,
+    run_cap: dict[str, Any],
+    ask_cap: dict[str, int],
+    params: dict[str, int],
+    overridden: bool,
+):
+    """With no cap over a run with none, r3con asks as it does by default."""
+    run_id = finished_run(client, **run_cap)
+    sent = len(claiming_llm.requests)
+    events = ask_events(client, run_id, {**ASK, **ask_cap})
+    asked = claiming_llm.requests[sent:]
+    assert [event["type"] for event in events] == ASK_EVENTS
+    assert {stage_of(request) for request in asked} == {
+        "reasoning",
+        "claims",
+        "linking",
+    }
+    config = manifest_of(events[-1]["ask_dir"])["config"]
+    assert [capped(request) for request in asked] == [params] * len(asked)
+    assert config["params"] == params
+    assert ("params" in config["overrides"]) == overridden
+
+
+@pytest.mark.parametrize(
+    ("model", "params"),
+    [
+        (MODEL, {**CONFIG_PARAMS, "max_tokens": OTHER_CAP}),
+        (OTHER_MODEL, {"max_tokens": OTHER_CAP}),
+    ],
+    ids=["the-runs-model", "another-model"],
+)
+def test_a_follow_ups_cap_is_sent_beside_the_params_r3con_asks_with(
+    client: TestClient, llm: FakeLLM, model: str, params: dict[str, Any]
+):
+    """r3con asks with its run's params on the run's model, and with none on another."""
+    with_config_params(CONFIG_PARAMS)
+    run_id = finished_run(client, max_tokens=CAP)
+    sent = len(llm.requests)
+    ask = {**ASK, "model": model, "max_tokens": OTHER_CAP}
+    events = ask_events(client, run_id, ask)
+    assert events[-1]["type"] == "ask_finished"
+    assert [request.get("max_tokens") for request in llm.requests[sent:]] == [
+        OTHER_CAP
+    ] * (len(llm.requests) - sent)
+    assert manifest_of(events[-1]["ask_dir"])["config"]["params"] == params
+
+
+@pytest.mark.parametrize(("change", "wrong"), REFUSED_CAPS)
+def test_an_ask_sent_a_cap_that_is_not_valid_is_refused_with_what_is_wrong(
+    client: TestClient, llm: FakeLLM, change: dict[str, Any], wrong: str
+):
+    run_id = finished_run(client)
+    sent = len(llm.requests)
+    response = client.post(f"/api/runs/{run_id}/asks", json={**ASK, **change})
+    assert response.status_code == 422
+    assert wrong in response.json()["error"]
+    assert llm.requests[sent:] == []
+
+
+def test_a_continue_keeps_its_runs_cap(client: TestClient, llm: FakeLLM):
+    llm.answers(parsing=RuntimeError("the model is down"))
+    run_id = start_run(client, max_tokens=CAP)
+    assert run_events(client, run_id)[-1]["type"] == "run_failed"
+    llm.answers(parsing=PARSE)
+    sent = len(llm.requests)
+    assert continued_events(client, run_id)[-1]["type"] == "run_finished"
+    continued = llm.requests[sent:]
+    assert continued
+    assert [capped(request) for request in continued] == [{"max_tokens": CAP}] * len(
+        continued
+    )
+
+
 def test_an_ask_keeps_its_runs_rounds_and_takes_none_of_its_own(client: TestClient):
     response = client.post("/api/runs", json={**run_body(), "summary_rounds": 3})
     run_id = response.json()["run_id"]
@@ -1707,25 +1882,25 @@ def test_a_runs_representation_leaves_out_the_manifests_paths_on_this_computer(
     assert representation_of(client, run_id)["manifest.json"] == manifest
 
 
+@pytest.mark.parametrize("cap", [{}, {"max_tokens": CAP}], ids=["uncapped", "capped"])
 def test_a_runs_representation_names_no_server_header_or_masked_value(
-    client: TestClient, tmp_path: Path
+    client: TestClient, cap: dict[str, Any]
 ):
     """A run on a stored server, under a config file where the server runs whose
-    params, as r3con's own config params may, carry another server and a header."""
-    config = yaml.safe_load((CONFIGS_DIR / "default.yaml").read_text())
-    params = {"api_base": SECOND_ENDPOINT, "extra_headers": {"X-Gateway-Key": GATE_KEY}}
-    (tmp_path / "configs").mkdir()
-    (tmp_path / "configs" / "default.yaml").write_text(
-        yaml.safe_dump({**config, "params": params})
+    params, as r3con's own config params may, carry another server and a header, which
+    a cap is sent beside."""
+    with_config_params(
+        {"api_base": SECOND_ENDPOINT, "extra_headers": {"X-Gateway-Key": GATE_KEY}}
     )
     client.post("/api/keys", json=OTHER)
-    run_id = finished_run(client, SERVED_OPENAI_MODEL, ENDPOINT)
+    run_id = finished_run(client, SERVED_OPENAI_MODEL, ENDPOINT, **cap)
     run_dir = Path(run_events(client, run_id)[0]["run_dir"])
     files = representation_of(client, run_id)
     saved = json.dumps(files)
     written = json.loads((run_dir / "manifest.json").read_text())["config"]["params"]
     assert written["api_base"] == SECOND_ENDPOINT
     assert files["manifest.json"]["config"]["params"] == {}
+    assert "params" not in files["manifest.json"]["config"]["overrides"]
     assert [
         held
         for held in (ENDPOINT, SECOND_ENDPOINT, OTHER_KEY, GATE_KEY, MASK)
@@ -2137,6 +2312,7 @@ def test_a_run_r3con_refuses_before_it_starts_ends_its_stream_and_cannot_be_aske
         ({"summary_rounds": True}, NOT_A_ROUND_COUNT),
         ({"summary_rounds": 2.5}, NOT_A_ROUND_COUNT),
         ({"evidence_level": "paragraph"}, NOT_AN_EVIDENCE_LEVEL),
+        *REFUSED_CAPS,
     ],
 )
 def test_a_run_body_that_is_not_valid_is_refused_with_what_is_wrong(
