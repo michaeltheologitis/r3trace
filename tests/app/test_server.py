@@ -28,12 +28,12 @@ from r3con.app.server import (
     APP_KEY_SERVICE,
     CONTINUE_FAILED,
     CONTINUE_REFUSALS,
-    DEFAULT_RELEVANCE_ROUNDS,
+    DEFAULT_SUMMARY_ROUNDS,
     DIRECT_ONLY,
     ENCRYPTED_ZIP,
     KEYLESS_SERVER_KEY,
     MAC_APP_KEY_SERVICE,
-    MAX_RELEVANCE_ROUNDS,
+    MAX_SUMMARY_ROUNDS,
     MAX_ZIP_BYTES,
     MAX_ZIP_ENTRIES,
     NO_SAVE_DIALOG,
@@ -161,11 +161,11 @@ ASK_EVENTS = [
     "claims_finished",
     "ask_finished",
 ]
-TOO_FEW_ROUNDS = "relevance_rounds: Input should be greater than or equal to 1"
+TOO_FEW_ROUNDS = "summary_rounds: Input should be greater than or equal to 1"
 TOO_MANY_ROUNDS = (
-    f"relevance_rounds: Input should be less than or equal to {MAX_RELEVANCE_ROUNDS}"
+    f"summary_rounds: Input should be less than or equal to {MAX_SUMMARY_ROUNDS}"
 )
-NOT_A_ROUND_COUNT = "relevance_rounds: Input should be a valid integer"
+NOT_A_ROUND_COUNT = "summary_rounds: Input should be a valid integer"
 NOT_AN_EVIDENCE_LEVEL = "evidence_level: Input should be 'sentence' or 'document'"
 ANSWER = {
     "answer": "Northgate",
@@ -1186,13 +1186,13 @@ def test_a_run_names_its_documents_by_the_names_sent_each_once(
 @pytest.mark.parametrize(
     ("sent", "rounds"),
     [
-        ({}, DEFAULT_RELEVANCE_ROUNDS),
-        ({"relevance_rounds": 1}, 1),
-        ({"relevance_rounds": MAX_RELEVANCE_ROUNDS}, MAX_RELEVANCE_ROUNDS),
+        ({}, DEFAULT_SUMMARY_ROUNDS),
+        ({"summary_rounds": 1}, 1),
+        ({"summary_rounds": MAX_SUMMARY_ROUNDS}, MAX_SUMMARY_ROUNDS),
     ],
     ids=["default", "one", "most"],
 )
-def test_a_run_builds_its_representation_over_the_relevance_rounds_sent(
+def test_a_run_builds_its_representation_over_the_summary_rounds_sent(
     client: TestClient, sent: dict[str, int], rounds: int
 ):
     response = client.post("/api/runs", json={**run_body(), **sent})
@@ -1203,7 +1203,7 @@ def test_a_run_builds_its_representation_over_the_relevance_rounds_sent(
         (e["round"], e["doc_id"]) for e in events if e["type"] == "relevance_finished"
     }
     every = {(k, d) for k in range(1, rounds + 1) for d in events[0]["document_ids"]}
-    assert events[0]["rounds"] == manifest["config"]["relevance_rounds"] == rounds
+    assert events[0]["rounds"] == manifest["config"]["summary_rounds"] == rounds
     assert finished == every
     assert events[-1]["type"] == "run_finished"
 
@@ -1225,17 +1225,15 @@ def test_a_run_reads_at_the_evidence_level_sent(
 
 
 def test_an_ask_keeps_its_runs_rounds_and_takes_none_of_its_own(client: TestClient):
-    response = client.post("/api/runs", json={**run_body(), "relevance_rounds": 3})
+    response = client.post("/api/runs", json={**run_body(), "summary_rounds": 3})
     run_id = response.json()["run_id"]
     assert run_events(client, run_id)[-1]["type"] == "run_finished"
     events = ask_events(client, run_id)
     manifest = json.loads((Path(events[-1]["ask_dir"]) / "manifest.json").read_text())
-    refused = client.post(
-        f"/api/runs/{run_id}/asks", json={**ASK, "relevance_rounds": 2}
-    )
-    assert manifest["config"]["relevance_rounds"] == 3
+    refused = client.post(f"/api/runs/{run_id}/asks", json={**ASK, "summary_rounds": 2})
+    assert manifest["config"]["summary_rounds"] == 3
     assert refused.status_code == 422
-    assert "relevance_rounds: Extra inputs are not permitted" in refused.json()["error"]
+    assert "summary_rounds: Extra inputs are not permitted" in refused.json()["error"]
 
 
 def test_an_ask_over_a_finished_run_streams_its_own_events(client: TestClient):
@@ -1794,7 +1792,7 @@ def test_an_imported_run_keeps_no_param_override_or_other_field_of_its_manifest(
         "name",
         "prompts",
         "reasoning",
-        "relevance_rounds",
+        "summary_rounds",
     ]
     assert transport(llm)[sent:] == [{"api_key": OPENAI_KEY}]
 
@@ -2133,11 +2131,11 @@ def test_a_run_r3con_refuses_before_it_starts_ends_its_stream_and_cannot_be_aske
         ({"endpoint": "file:///etc"}, "endpoint: String should match pattern"),
         ({"endpoint": "http://me:pw@127.0.0.1:9/v1"}, "endpoint: must not hold a user"),
         ({"endpoint": "http:///"}, "endpoint: must name a host"),
-        ({"relevance_rounds": 0}, TOO_FEW_ROUNDS),
-        ({"relevance_rounds": MAX_RELEVANCE_ROUNDS + 1}, TOO_MANY_ROUNDS),
-        ({"relevance_rounds": "3"}, NOT_A_ROUND_COUNT),
-        ({"relevance_rounds": True}, NOT_A_ROUND_COUNT),
-        ({"relevance_rounds": 2.5}, NOT_A_ROUND_COUNT),
+        ({"summary_rounds": 0}, TOO_FEW_ROUNDS),
+        ({"summary_rounds": MAX_SUMMARY_ROUNDS + 1}, TOO_MANY_ROUNDS),
+        ({"summary_rounds": "3"}, NOT_A_ROUND_COUNT),
+        ({"summary_rounds": True}, NOT_A_ROUND_COUNT),
+        ({"summary_rounds": 2.5}, NOT_A_ROUND_COUNT),
         ({"evidence_level": "paragraph"}, NOT_AN_EVIDENCE_LEVEL),
     ],
 )

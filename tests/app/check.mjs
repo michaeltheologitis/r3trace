@@ -224,16 +224,16 @@ const OFF_SCHEMA = '(the model answers off schema)';
 const RELEASE_FILE = 'release';
 const QUIET = '(nothing relevant here)';
 const SPLIT_MEMO = '06_split_memo';
-// The relevance rounds r3con's default config runs: the recorded sample's, and the setting's until another is chosen.
+// The summary rounds r3con's default config runs: the recorded sample's, and the setting's until another is chosen.
 const ROUNDS = 2;
-// r3con app's MAX_RELEVANCE_ROUNDS: the setting offers 1 to this many.
+// r3con app's MAX_SUMMARY_ROUNDS: the setting offers 1 to this many.
 const MAX_ROUNDS = 4;
 // Other counts of rounds, which a live run of each, chosen in the settings, is checked to send and draw in full; the
 // most is where a dotted line's lanes are tightest.
 const FEWER_ROUNDS = 1;
 const MORE_ROUNDS = 3;
 const OTHER_ROUNDS = [FEWER_ROUNDS, MORE_ROUNDS, MAX_ROUNDS];
-// The kinds of node of `rounds` relevance rounds, r1 on.
+// The kinds of node of `rounds` summary rounds, r1 on.
 const roundKinds = (rounds) => Array.from({ length: rounds }, (_, k) => `r${k + 1}`);
 // Besides its rounds' nodes, a run draws a document and a parse per document, then one schema and one answer.
 const DOCUMENT_AND_PARSE = 2;
@@ -1333,7 +1333,7 @@ function runOfRounds(columns, rounds) {
 
 const columnsShown = (columns) => columns.map(([kind, xs]) => `${kind}@${xs.join('/')}`).join(' ');
 
-// Opens the settings, chooses `rounds` relevance rounds, and closes them.
+// Opens the settings, chooses `rounds` summary rounds, and closes them.
 async function pickRounds(page, rounds) {
   await page.click('#settings-btn');
   await page.selectOption('#rounds', String(rounds));
@@ -3376,7 +3376,7 @@ async function selectSetting(page, checkAt, { id, label, key, options, initial, 
 async function evidenceSetting(page, checkAt) {
   await selectSetting(page, checkAt, { id: 'evidence', label: EVIDENCE_LABEL, key: EVIDENCE_KEY, options: EVIDENCE_LEVELS, initial: 'sentence', other: 'document' });
   await page.click('#settings-btn');
-  checkAt(`${EVIDENCE_LABEL} sits right above relevance rounds, its label and select lined up with that row's`, await page.evaluate(evidenceAboveRounds));
+  checkAt(`${EVIDENCE_LABEL} sits right above summary rounds, its label and select lined up with that row's`, await page.evaluate(evidenceAboveRounds));
   await page.keyboard.press('Escape');
 
   const shown = {};
@@ -3398,13 +3398,13 @@ function blockStorage() {
   });
 }
 
-// The relevance rounds setting, last: what it stores would be found by the other settings checks.
+// The summary rounds setting, last: what it stores would be found by the other settings checks.
 async function roundsSetting(page, checkAt) {
   const control = () => page.evaluate(selectControl, ['rounds', ROUNDS_KEY]);
   const drawn = () => page.evaluate(columnsDrawn);
   const store = (value) => page.evaluate(([key, held]) => localStorage.setItem(key, held), [ROUNDS_KEY, value]);
   const counts = Array.from({ length: MAX_ROUNDS }, (_, k) => String(k + 1));
-  await selectSetting(page, checkAt, { id: 'rounds', label: 'relevance rounds', key: ROUNDS_KEY, options: counts, initial: String(ROUNDS), other: String(MORE_ROUNDS) });
+  await selectSetting(page, checkAt, { id: 'rounds', label: 'summary rounds', key: ROUNDS_KEY, options: counts, initial: String(ROUNDS), other: String(MORE_ROUNDS) });
 
   await page.click('#run-btn');
   const recorded = (await becomes(page, statusIs, SAMPLE_STATUS)) && runOfRounds(await drawn(), ROUNDS);
@@ -7822,7 +7822,7 @@ async function liveRounds(url) {
   for (const rounds of OTHER_ROUNDS) await liveRoundsOf(url, rounds);
 }
 
-// A live run of `rounds` relevance rounds, chosen in the settings, is sent them, planned for them from its first frame,
+// A live run of `rounds` summary rounds, chosen in the settings, is sent them, planned for them from its first frame,
 // and draws every round, wired as r3con's events say.
 async function liveRoundsOf(url, rounds) {
   await withPage('live', { url, sample: false, memos: true, before: (page) => page.addInitScript(recordEvents) }, async (page) => {
@@ -7862,11 +7862,11 @@ async function liveRoundsOf(url, rounds) {
 
     const roundNodes = nodes.filter((n) => isRound(n.id));
     const placedAt = new Map(roundNodes.map((n) => [n.id, n.x]));
-    const sent = posted?.relevance_rounds === rounds && events.find((e) => e.type === 'run_started')?.rounds === rounds;
+    const sent = posted?.summary_rounds === rounds && events.find((e) => e.type === 'run_started')?.rounds === rounds;
     const still = frames.length > HELD_FRAMES && frames.every((f) => f.view === view && f.rounds.every(([id, x]) => placedAt.get(id) === x));
     const moved = frames.filter((f) => f.view !== view).length;
     const plannedName = `${run}, chosen in the settings, is sent ${rounds} and planned for ${rounds} from its first frame: neither the view nor any round's column moves`;
-    check('live', plannedName, done && sent && still, `sent ${posted?.relevance_rounds}; ${moved} of ${frames.length} frames off the run's view`);
+    check('live', plannedName, done && sent && still, `sent ${posted?.summary_rounds}; ${moved} of ${frames.length} frames off the run's view`);
     const columns = ['doc', ...kinds, 'schema', 'parsed', 'answer'].map((kind) => [...new Set(nodes.filter((n) => kindOf(n.id) === kind).map((n) => n.x))]);
     const gaps = columns.slice(1, -1).map(([x], c) => x - columns[c][0]);
     const placed = columns.every((xs) => xs.length === 1) && gaps.every((gap) => gap > 0 && gap === gaps[0]) && columns.at(-1)[0] > columns.at(-2)[0];
@@ -7954,21 +7954,21 @@ async function liveRoundsKept(url) {
     await page.click('#arrange-btn');
     const kept = await page.evaluate(columnsDrawn);
     const keptName = `a run keeps the ${MORE_ROUNDS} rounds it started with once ${FEWER_ROUNDS} is chosen while it runs: it is sent ${MORE_ROUNDS} and draws ${MORE_ROUNDS}, arranged too`;
-    check('live', keptName, done && posts[0]?.body.relevance_rounds === MORE_ROUNDS && runOfRounds(kept, MORE_ROUNDS), `sent ${posts[0]?.body.relevance_rounds}; ${columnsShown(kept)}`);
+    check('live', keptName, done && posts[0]?.body.summary_rounds === MORE_ROUNDS && runOfRounds(kept, MORE_ROUNDS), `sent ${posts[0]?.body.summary_rounds}; ${columnsShown(kept)}`);
 
     await followUpByButton(page, 'Which memo is the registry?');
     const answered = await becomes(page, lastTurnSays, [SCRIPTED_ANSWER, `ready · ${DEFAULT_MODEL} · $`], LIVE_RUN_MS);
     const ask = posts.find(({ path }) => path.endsWith('/asks'))?.body;
     const afterAsk = await page.evaluate(columnsDrawn);
     const askName = `a follow-up sends no round count, and its run still draws its ${MORE_ROUNDS} rounds`;
-    check('live', askName, answered && ask !== undefined && !('relevance_rounds' in ask) && runOfRounds(afterAsk, MORE_ROUNDS), `${JSON.stringify(ask)}; ${columnsShown(afterAsk)}`);
+    check('live', askName, answered && ask !== undefined && !('summary_rounds' in ask) && runOfRounds(afterAsk, MORE_ROUNDS), `${JSON.stringify(ask)}; ${columnsShown(afterAsk)}`);
 
     await askInNewTab(page, NEW_QUESTION);
     const again = await becomes(page, newRunDone, LIVE_DONE.source, LIVE_RUN_MS);
     const fresh = await page.evaluate(columnsDrawn);
     await page.locator('.run-tab').first().click();
     const first = await page.evaluate(columnsDrawn);
-    const sent = posts.filter(({ path }) => path === '/api/runs').map(({ body }) => body.relevance_rounds);
+    const sent = posts.filter(({ path }) => path === '/api/runs').map(({ body }) => body.summary_rounds);
     const nextName = `a + tab's run after the change is sent ${FEWER_ROUNDS} and draws ${FEWER_ROUNDS}, and the first tab still draws ${MORE_ROUNDS}`;
     check('live', nextName, again && isDeepStrictEqual(sent, [MORE_ROUNDS, FEWER_ROUNDS]) && runOfRounds(fresh, FEWER_ROUNDS) && runOfRounds(first, MORE_ROUNDS), `sent ${sent.join(', ')}; ${columnsShown(fresh)}`);
   });
@@ -8041,7 +8041,7 @@ async function liveAskAndFollowUp(url) {
     const opened = {
       numbers: await tabNumbers(page),
       row: await tabLabels(page),
-      sent: body && { question: body.question, model: body.model, names: body.names, rounds: body.relevance_rounds, evidence: body.evidence_level },
+      sent: body && { question: body.question, model: body.model, names: body.names, rounds: body.summary_rounds, evidence: body.evidence_level },
       ended: await becomes(page, newRunDone, LIVE_DONE.source, LIVE_RUN_MS),
     };
     await page.locator('.run-tab').first().click();
@@ -8586,7 +8586,7 @@ async function liveNames(url) {
     const numbered = isDeepStrictEqual(named, ['notes.txt', 'notes.txt (2)', 'plan.txt']);
     const name = "a run is sent each file's name beside its text, and r3con app names the run's documents by them, a name sent twice numbered the second time";
     check('live', name, done && paired && numbered, `${JSON.stringify(sent.names)}; ${JSON.stringify(named)}`);
-    check('live', `with no rounds chosen, a run is sent relevance_rounds ${ROUNDS}`, sent.relevance_rounds === ROUNDS, JSON.stringify(sent.relevance_rounds));
+    check('live', `with no rounds chosen, a run is sent summary_rounds ${ROUNDS}`, sent.summary_rounds === ROUNDS, JSON.stringify(sent.summary_rounds));
     check('live', `with no ${EVIDENCE_LABEL} chosen, a run is sent evidence_level "sentence"`, sent.evidence_level === 'sentence', JSON.stringify(sent.evidence_level));
   });
 }

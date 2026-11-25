@@ -283,7 +283,7 @@ so no single document contains the complete answer:
 
 - [`examples/quickstart.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/quickstart.ipynb) — a complete example of using R3Con.
 - [`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/provenance.ipynb) — checking the original sentences, summaries, and records behind an answer.
-- [`examples/options.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/options.ipynb) — configuring models, relevance rounds, reasoning, generation settings, custom connections, and saved files.
+- [`examples/options.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/options.ipynb) — configuring models, summary rounds, reasoning, generation settings, custom connections, and saved files.
 - [`examples/vllm.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/vllm.ipynb) — using an AI model hosted on your own vLLM server.
 
 ## Output

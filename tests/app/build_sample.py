@@ -7,7 +7,7 @@ The run folder, ``tests/app/sample/20261105T173546Z_bb4f0c37/``, is a real run, 
 unedited from the ``logs/`` r3con wrote it to:
 
 - The run: ``r3con run QUESTION examples/memos`` with r3con 0.6.4 (main at 20964ea), its
-  default config and no overrides: model ``openai/gpt-6-luna``, two relevance rounds,
+  default config and no overrides: model ``openai/gpt-6-luna``, two summary rounds,
   direct reasoning, empty ``params``, and that config's prompt pins (relevance v2 and
   v3, schema v1, parsing v3, direct v3). QUESTION: "Which maintenance contractor's sites
   logged the most equipment incidents in Q3 in total, and how many?"
