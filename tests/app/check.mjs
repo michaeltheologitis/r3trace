@@ -3376,7 +3376,7 @@ async function selectSetting(page, checkAt, { id, label, key, options, initial, 
 async function evidenceSetting(page, checkAt) {
   await selectSetting(page, checkAt, { id: 'evidence', label: EVIDENCE_LABEL, key: EVIDENCE_KEY, options: EVIDENCE_LEVELS, initial: 'sentence', other: 'document' });
   await page.click('#settings-btn');
-  checkAt(`${EVIDENCE_LABEL} sits right above relevance rounds, its label and select lined up with that row's`, await page.evaluate(evidenceAboveRounds));
+  checkAt(`${EVIDENCE_LABEL} sits right above summary rounds, its label and select lined up with that row's`, await page.evaluate(evidenceAboveRounds));
   await page.keyboard.press('Escape');
 
   const shown = {};
@@ -3404,7 +3404,7 @@ async function roundsSetting(page, checkAt) {
   const drawn = () => page.evaluate(columnsDrawn);
   const store = (value) => page.evaluate(([key, held]) => localStorage.setItem(key, held), [ROUNDS_KEY, value]);
   const counts = Array.from({ length: MAX_ROUNDS }, (_, k) => String(k + 1));
-  await selectSetting(page, checkAt, { id: 'rounds', label: 'relevance rounds', key: ROUNDS_KEY, options: counts, initial: String(ROUNDS), other: String(MORE_ROUNDS) });
+  await selectSetting(page, checkAt, { id: 'rounds', label: 'summary rounds', key: ROUNDS_KEY, options: counts, initial: String(ROUNDS), other: String(MORE_ROUNDS) });
 
   await page.click('#run-btn');
   const recorded = (await becomes(page, statusIs, SAMPLE_STATUS)) && runOfRounds(await drawn(), ROUNDS);
