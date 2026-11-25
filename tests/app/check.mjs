@@ -127,7 +127,10 @@ const FIELD_NAMES = {
   'OpenAI-compatible server: URL': 'endpoint-other',
   'OpenAI-compatible server: API key': 'key-other',
   'model to add': 'model-add',
+  'token cap': 'token-cap',
 };
+// What the settings show besides fields and labels: the buttons in view and their one paragraph.
+const SETTINGS_EXTRAS = { buttons: ['close settings', 'add', 'about the token cap'], paragraphs: ['settings-saved'] };
 const LARGE_RUN_DOCS = 40;
 const LARGE_RUN_COUNTS = { nodes: 162, edges: 3440 };
 // The page's GRID.rowGap: answer nodes stack this far apart.
@@ -246,6 +249,21 @@ const EVIDENCE_LEVELS = ['sentence', 'document'];
 const STORED_EVIDENCE = { sentence: 'sentence', document: 'document', paragraph: 'sentence' };
 // What storage may hold that r3con app would refuse as a count of rounds.
 const REFUSED_ROUNDS = ['7', '0', '2.5', 'three'];
+const TOKEN_CAP_KEY = 'r3con-proto-token-cap';
+const TOKEN_CAP_LABEL = 'token cap';
+const CAP_EXAMPLE = 'e.g. 8192';
+// The token cap's ⓘ note, word for word.
+const CAP_NOTE = [
+  "Token cap: Maximum tokens per call. By default we don't have one. We suggest that with smaller or newer models to put a cap of 8192: they can get stuck in repetition loops, and this helps us catch this and retry early. Please be careful with reasoning models as the thinking tokens count in the maximum. Increase for heavy reasoning.",
+];
+const CAP = 8192;
+const OTHER_CAP = 4096;
+// What the field refuses, none a whole number from 1 to r3con app's MAX_TOKEN_CAP in digits, and what the settings say.
+const REFUSED_CAPS = ['0', '-1', '2.5', '1e4', '8,192', 'abc', '1000001'];
+const CAP_REFUSED = 'Token cap · needs a whole number from 1 to 1,000,000';
+// What storage may hold that reads as no cap, and a cap typed loosely, kept as its number.
+const STORED_REFUSED_CAPS = ['0', 'abc', '2.5', '1000001'];
+const LOOSE_CAP = [' 0128 ', '128'];
 // Frames drawn while a run's request is held, before r3con app has said anything of the run.
 const HELD_FRAMES = 3;
 const SIMULATED_DONE = /^● done · simulated run · .+ · nothing was sent$/;
@@ -2881,6 +2899,7 @@ async function settings() {
       await picker(page, checkAt);
       await savedModels(page, checkAt);
       await evidenceSetting(page, checkAt);
+      await capSetting(page, checkAt);
       await roundsSetting(page, checkAt);
       const leaks = messages.filter((m) => m.text.includes(TEST_KEY)).length;
       checkAt('no console message holds the key', leaks === 0, `${messages.length} messages`);
@@ -2904,8 +2923,8 @@ async function keys(page, checkAt) {
   await page.click(nodeSel('doc-0'));
   await page.click('#settings-btn');
   const extras = await page.evaluate(settingsExtras);
-  const quiet = isDeepStrictEqual(extras, { buttons: ['close settings', 'add'], paragraphs: ['settings-saved'] });
-  checkAt("the settings have no save button, no note under the keys and no server hint: only the line a save writes to, and a model's add", quiet, JSON.stringify(extras));
+  const quiet = isDeepStrictEqual(extras, SETTINGS_EXTRAS);
+  checkAt("the settings have no save button, no note under the keys and no server hint: only the line a save writes to, a model's add and the token cap's ⓘ", quiet, JSON.stringify(extras));
   const named = [];
   for (const [name, id] of Object.entries(FIELD_NAMES)) {
     const ids = await page.getByRole('textbox', { name, exact: true }).evaluateAll((els) => els.map((el) => el.id));
@@ -3387,6 +3406,161 @@ async function evidenceSetting(page, checkAt) {
   }
   const storedName = 'a level stored as the checkbox before it stored one still shows, and anything else reads as sentence';
   checkAt(storedName, isDeepStrictEqual(shown, STORED_EVIDENCE), JSON.stringify(shown));
+}
+
+// In-page: the token cap field's value, placeholder and validity, what describes it, and what storage holds at `key`.
+function capControl(key) {
+  const field = document.getElementById('token-cap');
+  let stored;
+  try {
+    stored = localStorage.getItem(key);
+  } catch {
+    stored = 'blocked';
+  }
+  return { value: field.value, placeholder: field.placeholder, valid: field.validity.valid, describedBy: field.getAttribute('aria-describedby'), stored };
+}
+
+// In-page, in the open settings: whether the token cap row comes right after the rounds row, below it, starting its
+// label and field where that row starts its label and select, its label, ⓘ and field on one line, ⓘ after the label.
+function capUnderRounds() {
+  const [field, rounds] = [document.getElementById('token-cap'), document.getElementById('rounds')];
+  const [row, roundsRow] = [field.parentElement, rounds.parentElement];
+  const box = (el) => el.getBoundingClientRect();
+  const near = (a, b) => Math.abs(a - b) < 1;
+  const [label, info] = [field.labels[0], document.getElementById('cap-note-btn')];
+  const middle = (box(label).top + box(label).bottom) / 2;
+  const across = (el) => box(el).top < middle && middle < box(el).bottom;
+  return {
+    after: roundsRow.nextElementSibling === row && box(roundsRow).bottom <= box(row).top,
+    left: near(box(label).left, box(rounds.labels[0]).left) && near(box(field).left, box(rounds).left),
+    line: across(info) && across(field) && box(info).left >= box(label).right,
+  };
+}
+
+// In-page: the token cap's ⓘ note's state, its text, whether it sits over the cap's row as wide as it and in view,
+// and whether the settings are open.
+function capNoteShown(slack) {
+  const note = document.getElementById('cap-note');
+  const button = document.getElementById('cap-note-btn');
+  const box = note.getBoundingClientRect();
+  const row = document.getElementById('cap-row').getBoundingClientRect();
+  return {
+    open: note.matches(':popover-open'),
+    expanded: button.getAttribute('aria-expanded'),
+    controls: button.getAttribute('aria-controls') === note.id,
+    text: [...note.querySelectorAll('p')].map((p) => p.textContent),
+    over: box.bottom <= row.top && box.top >= 0 && Math.abs(box.left - row.left) < slack && Math.abs(box.right - row.right) < slack,
+    settings: document.getElementById('settings').matches(':popover-open'),
+  };
+}
+
+// Opens the settings, types `cap` into the token cap's field, and closes them.
+async function setCap(page, cap) {
+  await page.click('#settings-btn');
+  await page.fill('#token-cap', cap);
+  await page.keyboard.press('Escape');
+}
+
+// The token cap setting: a field under summary rounds, empty by default, with an ⓘ note; a cap typed holds at once and
+// after a reload, an emptied field holds none, and one r3con app would refuse is refused, saying why.
+async function capSetting(page, checkAt) {
+  const control = () => page.evaluate(capControl, TOKEN_CAP_KEY);
+  const said = () => page.textContent('#settings-saved');
+  const reopened = async () => {
+    await page.reload();
+    await page.click('#settings-btn');
+    return control();
+  };
+  const fresh = await reopened();
+  const named = await page.getByRole('textbox', { name: TOKEN_CAP_LABEL, exact: true }).evaluateAll((els) => els.map((el) => el.id));
+  const bare = { value: '', placeholder: CAP_EXAMPLE, valid: true, describedBy: null, stored: null };
+  checkAt(`the settings offer a ${TOKEN_CAP_LABEL} field, named by its label, empty with "${CAP_EXAMPLE}" as its placeholder, storing nothing`, isDeepStrictEqual(named, ['token-cap']) && isDeepStrictEqual(fresh, bare), JSON.stringify({ named, ...fresh }));
+  const placed = await page.evaluate(capUnderRounds);
+  const lined = { after: true, left: true, line: true };
+  checkAt(`${TOKEN_CAP_LABEL} sits right under summary rounds, its label and field lined up with that row's, its ⓘ beside its label`, isDeepStrictEqual(placed, lined), JSON.stringify(placed));
+  checkAt(`the ${TOKEN_CAP_LABEL} label, ⓘ and field fit inside the settings, which do not scroll sideways`, await page.evaluate(controlFits, 'token-cap'));
+
+  const shownNote = () => page.evaluate(capNoteShown, ALIGNED_PX);
+  const closed = await shownNote();
+  await page.click('#cap-note-btn');
+  const opened = await shownNote();
+  const look = await page.evaluate(noteLook, 'cap-note');
+  await page.click('#cap-note-btn');
+  const byButton = await shownNote();
+  await page.click('#cap-note-btn');
+  await page.keyboard.press('Escape');
+  const byEscape = await shownNote();
+  await page.click('#cap-note-btn');
+  await page.click('#settings .insp-title');
+  const byClickInSettings = await shownNote();
+  await page.click('#cap-note-btn');
+  await page.click('.brand');
+  const byOutside = await shownNote();
+  const shut = (note) => !note.open && note.expanded === 'false';
+  const toggles = shut(closed) && opened.open && opened.expanded === 'true' && opened.controls && opened.over && opened.settings && isDeepStrictEqual(opened.text, CAP_NOTE);
+  const settingsKept = [byButton, byEscape, byClickInSettings].every((note) => shut(note) && note.settings) && shut(byOutside) && !byOutside.settings;
+  const noteName = `ⓘ opens a note over the ${TOKEN_CAP_LABEL} row, as wide as it and in view, saying what a cap does word for word, its button expanded and controlling it; ⓘ again, Escape or a click elsewhere in the settings closes it and leaves them open, and a click outside closes both`;
+  checkAt(noteName, toggles && settingsKept, JSON.stringify({ closed, opened, byButton, byEscape, byClickInSettings, byOutside }));
+  checkAt("the note looks as the page's other popups do: its background, border, shadow and font", isDeepStrictEqual(look.note, look.settings), JSON.stringify(look));
+
+  await page.click('#settings-btn');
+  await page.focus('#rounds');
+  await page.keyboard.press('Tab');
+  const ring = await page.evaluate(focusedRing);
+  await page.keyboard.press('Enter');
+  const entered = await shownNote();
+  await page.keyboard.press('Escape');
+  const escaped = await shownNote();
+  await page.keyboard.press('Tab');
+  const next = await focusedId(page);
+  const keyboard = isDeepStrictEqual(ring, { name: 'about the token cap', ring: true }) && entered.open && shut(escaped) && escaped.settings && next === 'token-cap';
+  checkAt('from the keyboard, Tab from summary rounds reaches ⓘ with its ring showing, Enter opens its note and Escape closes it alone, and Tab then reaches the field', keyboard, JSON.stringify({ ring, entered: entered.open, escaped, next }));
+
+  await page.keyboard.type(String(CAP));
+  const typed = await control();
+  await page.keyboard.press('Escape');
+  const kept = await reopened();
+  const held = (state, cap) => state.value === cap && state.stored === cap && state.valid;
+  checkAt(`a cap typed, ${CAP}, is stored at once and still there after a reload`, held(typed, String(CAP)) && held(kept, String(CAP)), JSON.stringify({ typed, kept }));
+  await page.fill('#token-cap', '');
+  const emptied = await control();
+  const emptiedKept = await reopened();
+  const none = (state) => state.value === '' && state.stored === null && state.valid;
+  checkAt('emptying the field drops the cap at once, and after a reload it is still empty', none(emptied) && none(emptiedKept), JSON.stringify({ emptied, emptiedKept }));
+
+  await page.fill('#token-cap', LOOSE_CAP[0]);
+  await page.press('#token-cap', 'Tab');
+  const loose = await control();
+  checkAt(`a cap typed as "${LOOSE_CAP[0]}" holds as ${LOOSE_CAP[1]}, which the field shows once left`, held(loose, LOOSE_CAP[1]), JSON.stringify(loose));
+
+  await page.fill('#token-cap', String(OTHER_CAP));
+  const refusals = [];
+  for (const cap of REFUSED_CAPS) {
+    await page.fill('#token-cap', cap);
+    const marked = await control();
+    await page.press('#token-cap', 'Tab');
+    refusals.push({ cap, marked: !marked.valid && marked.stored === String(OTHER_CAP), left: await control(), said: await said() });
+  }
+  const refusedOnLeaving = refusals.every(({ marked, left, said: line }) => marked && held(left, String(OTHER_CAP)) && line === CAP_REFUSED);
+  checkAt(`a cap r3con app would refuse (${REFUSED_CAPS.join(', ')}) is marked invalid as typed and never stored; leaving the field says why and puts back the cap that holds`, refusedOnLeaving, JSON.stringify(refusals.filter(({ marked, left, said: line }) => !marked || !held(left, String(OTHER_CAP)) || line !== CAP_REFUSED)));
+
+  await page.fill('#token-cap', REFUSED_CAPS[0]);
+  await page.press('#token-cap', 'Enter');
+  const entering = { ...(await control()), focused: await focusedId(page), message: await page.$eval('#token-cap', (el) => el.validationMessage) };
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  const closedSettings = await control();
+  const onEnter = entering.value === REFUSED_CAPS[0] && !entering.valid && entering.stored === String(OTHER_CAP) && entering.focused === 'token-cap' && CAP_REFUSED.endsWith(entering.message);
+  checkAt("Enter on a refused cap keeps it in the field with the field's own error, and closing the settings puts back the cap that holds", onEnter && held(closedSettings, String(OTHER_CAP)), JSON.stringify({ entering, closedSettings }));
+
+  const stored = [];
+  for (const cap of STORED_REFUSED_CAPS) {
+    await page.evaluate(([key, value]) => localStorage.setItem(key, value), [TOKEN_CAP_KEY, cap]);
+    stored.push((await reopened()).value);
+  }
+  await page.evaluate((key) => localStorage.removeItem(key), TOKEN_CAP_KEY);
+  await page.keyboard.press('Escape');
+  checkAt(`storage holding a cap r3con app would refuse (${STORED_REFUSED_CAPS.join(', ')}) reads as none`, stored.every((value) => value === ''), JSON.stringify(stored));
 }
 
 // In-page, before the page's own script: storage throws on any use, as when the browser blocks it.
@@ -5529,13 +5703,13 @@ function askNoteShown(slack) {
   };
 }
 
-// In-page: the ⓘ note's look beside the settings', a popup of the page's own: background, border, shadow and font.
-function askNoteLook() {
+// In-page: ⓘ note `id`'s look beside the settings', a popup of the page's own: background, border, shadow and font.
+function noteLook(id) {
   const look = (el) => {
     const style = getComputedStyle(el);
     return [style.backgroundColor, style.borderTopColor, style.boxShadow, style.fontFamily];
   };
-  return { note: look(document.getElementById('ask-note')), settings: look(document.getElementById('settings')) };
+  return { note: look(document.getElementById(id)), settings: look(document.getElementById('settings')) };
 }
 
 // In-page: each shown turn's question mark and its colour, question, folded log line and follow-up tag colour.
@@ -5561,7 +5735,7 @@ async function followUps() {
     const closed = await shownNote();
     await page.click('#ask-note-btn');
     const opened = await shownNote();
-    const look = await page.evaluate(askNoteLook);
+    const look = await page.evaluate(noteLook, 'ask-note');
     await page.click('#ask-note-btn');
     const byButton = await shownNote();
     await page.click('#ask-note-btn');
@@ -6645,8 +6819,8 @@ async function liveSession(url) {
 
     await page.click('#settings-btn');
     const extras = await page.evaluate(settingsExtras);
-    const quiet = isDeepStrictEqual(extras, { buttons: ['close settings', 'add'], paragraphs: ['settings-saved'] });
-    check('live', "the settings have no save button and no note under the keys, only a model's add", quiet, JSON.stringify(extras));
+    const quiet = isDeepStrictEqual(extras, SETTINGS_EXTRAS);
+    check('live', "the settings have no save button and no note under the keys, only a model's add and the token cap's ⓘ", quiet, JSON.stringify(extras));
     const hintWithout = (await page.evaluate(pickerState)).hint;
     await page.fill('#key-openai', TEST_KEY);
     const marked = (await saveByEnter(page, '#key-openai')) && isDeepStrictEqual(await page.evaluate(keyStates), ['state-openai']);
@@ -7962,6 +8136,7 @@ async function liveRoundsKept(url) {
     const afterAsk = await page.evaluate(columnsDrawn);
     const askName = `a follow-up sends no round count, and its run still draws its ${MORE_ROUNDS} rounds`;
     check('live', askName, answered && ask !== undefined && !('summary_rounds' in ask) && runOfRounds(afterAsk, MORE_ROUNDS), `${JSON.stringify(ask)}; ${columnsShown(afterAsk)}`);
+    check('live', `with no ${TOKEN_CAP_LABEL} set, a follow-up is sent no max_tokens`, ask !== undefined && !('max_tokens' in ask), JSON.stringify(ask));
 
     await askInNewTab(page, NEW_QUESTION);
     const again = await becomes(page, newRunDone, LIVE_DONE.source, LIVE_RUN_MS);
@@ -8588,6 +8763,44 @@ async function liveNames(url) {
     check('live', name, done && paired && numbered, `${JSON.stringify(sent.names)}; ${JSON.stringify(named)}`);
     check('live', `with no rounds chosen, a run is sent summary_rounds ${ROUNDS}`, sent.summary_rounds === ROUNDS, JSON.stringify(sent.summary_rounds));
     check('live', `with no ${EVIDENCE_LABEL} chosen, a run is sent evidence_level "sentence"`, sent.evidence_level === 'sentence', JSON.stringify(sent.evidence_level));
+    check('live', `with no ${TOKEN_CAP_LABEL} set, a run is sent no max_tokens`, !('max_tokens' in sent), JSON.stringify(sent.max_tokens));
+  });
+}
+
+// The run's manifest, as r3con wrote it in its folder, which the run's first event names.
+const runManifest = async (url, runId) => JSON.parse(readFileSync(join((await runStarted(url, runId)).run_dir, 'manifest.json'), 'utf8'));
+
+// A token cap set in the settings goes with each run and follow-up as the field holds it when each is sent, and none
+// once the field is emptied.
+async function liveTokenCap(url) {
+  await withPage('live', { url, sample: false, memos: true }, async (page) => {
+    const posts = [];
+    page.on('request', (request) => {
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'POST' && /^\/api\/runs(\/\w+\/asks)?$/.test(path)) posts.push({ path, body: request.postDataJSON() });
+    });
+    const capsSent = (asks) => posts.filter(({ path }) => path.endsWith('/asks') === asks).map(({ body }) => ('max_tokens' in body ? body.max_tokens : 'none'));
+    await setCap(page, String(CAP));
+    const started = startedJob(page, '/api/runs');
+    await page.click('#run-btn');
+    const runId = (await (await started).json()).run_id;
+    const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
+    const { params } = (await runManifest(url, runId)).config;
+    const runName = `with a ${TOKEN_CAP_LABEL} of ${CAP} set, a run is sent max_tokens ${CAP}, and its folder's manifest records it in its params`;
+    check('live', runName, done && isDeepStrictEqual(capsSent(false), [CAP]) && isDeepStrictEqual(params, { max_tokens: CAP }), `${capsSent(false)}; ${JSON.stringify(params)}`);
+
+    const answered = [];
+    for (const cap of [String(CAP), String(OTHER_CAP), '']) {
+      if (cap !== String(CAP)) await setCap(page, cap);
+      await followUpByButton(page, 'Which memo is the registry?');
+      answered.push(await becomes(page, lastTurnSays, [SCRIPTED_ANSWER, `ready · ${DEFAULT_MODEL} · $`], LIVE_RUN_MS));
+    }
+    const askName = `each follow-up is sent the cap set as it is sent, ${CAP}, then ${OTHER_CAP}, and no max_tokens once the field is emptied`;
+    check('live', askName, answered.every(Boolean) && isDeepStrictEqual(capsSent(true), [CAP, OTHER_CAP, 'none']), `${capsSent(true)}; answered ${answered}`);
+
+    await askInNewTab(page, NEW_QUESTION);
+    const again = await becomes(page, newRunDone, LIVE_DONE.source, LIVE_RUN_MS);
+    check('live', "with the field emptied, a + tab's run is sent no max_tokens", again && isDeepStrictEqual(capsSent(false), [CAP, 'none']), capsSent(false).join(', '));
   });
 }
 
@@ -10062,6 +10275,7 @@ async function live() {
     await liveClaimsFailed(url);
     await liveRounds(url);
     await liveRoundsKept(url);
+    await liveTokenCap(url);
     await liveFailure(url);
     await liveUnreadable(url);
     await livePdf(url);

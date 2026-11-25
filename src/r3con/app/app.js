@@ -135,6 +135,7 @@
    * @property {Map<number, number>} pruned each document r3con pruned, mapped to the round after which it did: read in no later round, nor parsed
    * @property {string | null} [lit]
    * @property {EvidenceLevel} [evidence] a live run's, as sent
+   * @property {number | null} [cap] a live run's token cap, as sent, null for none
    */
   /**
    * @typedef {object} RecordedRun
@@ -2367,6 +2368,7 @@
   const MODEL_KEY = 'r3con-proto-model';
   const ROUNDS_KEY = 'r3con-proto-rounds';
   const EVIDENCE_KEY = 'r3con-proto-evidence';
+  const TOKEN_CAP_KEY = 'r3con-proto-token-cap';
   const SIDE_WIDTH_KEY = 'r3con-proto-side-width';
   // In sessionStorage: what r3con app opened this tab with, for a reload.
   const LAUNCH_KEY = 'r3con-launch';
@@ -2415,6 +2417,10 @@
   const DEFAULT_EVIDENCE = 'sentence';
   /** @type {EvidenceLevel[]} */
   const EVIDENCE_LEVELS = [DEFAULT_EVIDENCE, 'document'];
+  // The largest token cap r3con app takes, its MAX_TOKEN_CAP, and what the settings say of one it would refuse.
+  const MAX_TOKEN_CAP = 1_000_000;
+  const CAP_LABEL = 'Token cap';
+  const CAP_RULE = `a whole number from 1 to ${MAX_TOKEN_CAP.toLocaleString('en-US')}`;
   // The first round r3con prunes after: an empty round-1 note alone prunes nothing.
   const FIRST_PRUNING_ROUND = 2;
   const FROM_ROUND_1 = "nothing relevant in the end · answered from round 1's notes";
@@ -2589,6 +2595,7 @@
   const modelWhere = $('model-where', HTMLSelectElement);
   const roundsPick = $('rounds', HTMLSelectElement);
   const evidencePick = $('evidence', HTMLSelectElement);
+  const capField = $('token-cap', HTMLInputElement);
   const frame = $('frame');
   const trash = $('trash');
   const removeAllButtons = [$('files-remove-all'), $('panel-remove-all')];
@@ -3237,11 +3244,11 @@
 
   // Filled in by r3con app's events as they arrive; events carry no per-call tokens or cost, so it has no calls.
   // It is planned for the rounds it asks for, unless its run_started event says it has others.
-  /** @param {string} question @param {string} model @param {string | null} endpoint @param {LoadedFile[]} docs @param {number} rounds @param {EvidenceLevel} evidence @returns {Run} */
-  function liveRun(question, model, endpoint, docs, rounds, evidence) {
+  /** @param {string} question @param {string} model @param {string | null} endpoint @param {LoadedFile[]} docs @param {number} rounds @param {EvidenceLevel} evidence @param {number | null} cap @returns {Run} */
+  function liveRun(question, model, endpoint, docs, rounds, evidence, cap) {
     /** @type {Pick<Run, 'rounds' | 'schema' | 'parsed' | 'pruned' | 'calls' | 'totals'>} */
     const empty = { rounds: emptyRounds(rounds), schema: null, parsed: [], pruned: new Map(), calls: null, totals: null };
-    return { simulated: false, id: null, evidence, ...withIds([]), docs, answers: [{ question, model, endpoint, text: null, provenance: null }], ...empty };
+    return { simulated: false, id: null, evidence, cap, ...withIds([]), docs, answers: [{ question, model, endpoint, text: null, provenance: null }], ...empty };
   }
 
   /** @param {boolean} simulated @param {Totals | null | undefined} totals */
@@ -6412,9 +6419,13 @@
   /** @param {RunTab} tab @param {Narrator} narr */
   async function streamRun(tab, narr) {
     const { question, model, endpoint } = tab.run.answers[0];
-    const body = { question, model, endpoint, ...documentsOf(tab.run), summary_rounds: tab.run.rounds.length, evidence_level: tab.run.evidence };
+    const body = { question, model, endpoint, ...documentsOf(tab.run), summary_rounds: tab.run.rounds.length, evidence_level: tab.run.evidence, ...capped(tab.run.cap) };
     await playLive(tab, narr, '/api/runs', body, 'failed');
   }
+
+  // A request carries a token cap only when one is set: with none, r3con sends what it would without the setting.
+  /** @param {number | null | undefined} cap */
+  const capped = (cap) => (cap ? { max_tokens: cap } : {});
 
   /** @param {Run} run */
   const documentsOf = (run) => ({ documents: run.docs.map((f) => f.text), names: run.docs.map((f) => f.name) });
@@ -6483,8 +6494,8 @@
   }
 
   // An ask runs only reasoning, over what the run built; its node waits in the answer column until it lands.
-  /** @param {RunTab} tab @param {string} question @param {string} model @param {string | null} endpoint */
-  async function askOver(tab, question, model, endpoint) {
+  /** @param {RunTab} tab @param {string} question @param {string} model @param {string | null} endpoint @param {number | null} cap */
+  async function askOver(tab, question, model, endpoint, cap) {
     const { run } = tab;
     /** @type {Answer} */
     const ask = { question, model, source: 'live', text: null, provenance: null, totals: null };
@@ -6524,7 +6535,7 @@
       }
     };
     try {
-      const asked = await api(`/api/runs/${run.id}/asks`, { method: 'POST', body: { question, model, endpoint } });
+      const asked = await api(`/api/runs/${run.id}/asks`, { method: 'POST', body: { question, model, endpoint, ...capped(cap) } });
       jobStarted(stream, (await asked.json()).ask_id);
       await follow(`/api/asks/${ask.id}/events`, onEvent);
     } catch (error) {
@@ -7477,6 +7488,49 @@
   const pickedRounds = () => Number(roundsPick.value);
   const pickedEvidence = () => /** @type {EvidenceLevel} */ (evidencePick.value);
 
+  // A token cap as typed, or null for one r3con app would refuse: a whole number, in digits, from 1 to MAX_TOKEN_CAP.
+  /** @param {string} text */
+  function capOf(text) {
+    const digits = text.trim();
+    const cap = Number(digits);
+    return /^\d+$/.test(digits) && cap >= 1 && cap <= MAX_TOKEN_CAP ? cap : null;
+  }
+
+  // The token cap every call of a run or follow-up is sent, null for none: the last the field held that r3con app takes.
+  /** @type {number | null} */
+  let tokenCap = null;
+  const pickedCap = () => tokenCap;
+
+  function showCap() {
+    capField.value = String(tokenCap ?? '');
+  }
+
+  // A cap typed holds at once, as a select's choice does, and an emptied field drops it; one r3con app would refuse
+  // changes nothing, and marks the field until it is fixed or left.
+  function onCapInput() {
+    const typed = capField.value.trim();
+    const cap = capOf(typed);
+    capField.setCustomValidity(typed && cap === null ? CAP_RULE : '');
+    if (typed && cap === null) return;
+    tokenCap = cap;
+    if (cap === null) removeStored(TOKEN_CAP_KEY);
+    else writeStored(TOKEN_CAP_KEY, String(cap));
+  }
+
+  // Enter shows a refused cap's own error; leaving the field, or closing the settings, names it in the save line and
+  // puts back the cap that holds.
+  /** @param {boolean} [onEnter] */
+  function commitCap(onEnter = false) {
+    const refused = !capField.validity.valid;
+    if (refused && onEnter) {
+      capField.reportValidity();
+      return;
+    }
+    if (refused) showSaveResult(`${CAP_LABEL} · needs ${CAP_RULE}`);
+    capField.setCustomValidity('');
+    showCap();
+  }
+
   function buildSettings() {
     fill($('keys'), keyRows());
     fill(roundsPick, range(MAX_ROUNDS).map((k) => h('option', { value: k + 1 }, k + 1 === DEFAULT_ROUNDS ? `${k + 1} · default` : String(k + 1))));
@@ -7484,6 +7538,9 @@
     const evidence = readStored(EVIDENCE_KEY);
     fill(evidencePick, EVIDENCE_LEVELS.map((level) => h('option', { value: level }, level === DEFAULT_EVIDENCE ? `${level} · default` : level)));
     evidencePick.value = EVIDENCE_LEVELS.find((level) => level === evidence) ?? DEFAULT_EVIDENCE;
+    // Storage is outside input: anything but a cap r3con app takes reads as none.
+    tokenCap = capOf(readStored(TOKEN_CAP_KEY) ?? '');
+    showCap();
   }
 
   // The groups typed in and not yet saved: a provider's key, or a server's URL and key together.
@@ -7514,6 +7571,7 @@
     if (e.newState === 'closed') {
       edited.forEach((group) => commit(group));
       addModel();
+      commitCap();
     }
     clearSettings();
     if (e.newState === 'open') placeSettings();
@@ -7966,8 +8024,9 @@
       e.preventDefault();
       $('ask-form', HTMLFormElement).requestSubmit(e.metaKey || e.ctrlKey ? followUpButton : null);
     });
-    askNote.addEventListener('beforetoggle', onAskNoteToggle);
-    window.addEventListener('resize', () => askNote.matches(':popover-open') && placeAskNote());
+    const askForm = $('ask-form');
+    noteOver(askNote, askNoteButton, askForm, /** @type {Element} */ (askForm.querySelector('.ask-foot')));
+    noteOver($('cap-note'), $('cap-note-btn', HTMLButtonElement), $('cap-row'), $('cap-row'));
     modelPick.addEventListener('change', onPick);
     modelAdd.addEventListener('input', placeModel);
     modelAdd.addEventListener('keydown', (e) => e.key === 'Enter' && !e.isComposing && addModel());
@@ -7975,6 +8034,10 @@
     $('model-add-btn').addEventListener('click', addModel);
     roundsPick.addEventListener('change', () => writeStored(ROUNDS_KEY, roundsPick.value));
     evidencePick.addEventListener('change', () => writeStored(EVIDENCE_KEY, evidencePick.value));
+    capField.addEventListener('input', onCapInput);
+    capField.addEventListener('keydown', (e) => e.key === 'Enter' && !e.isComposing && commitCap(true));
+    // Switching to another app leaves no field.
+    capField.addEventListener('focusout', () => document.hasFocus() && commitCap());
     questionEl.addEventListener('input', readyStatus);
 
     for (const id of ['file-input', 'folder-input']) {
@@ -8137,19 +8200,20 @@
     }
   }
 
-  function placeAskNote() {
-    const form = $('ask-form');
-    const box = form.getBoundingClientRect();
-    const row = /** @type {Element} */ (form.querySelector('.ask-foot')).getBoundingClientRect();
-    askNote.style.left = `${box.left}px`;
-    askNote.style.width = `${box.width}px`;
-    askNote.style.bottom = `${root.clientHeight - row.top + POPOVER_GAP}px`;
-  }
-
-  /** @param {ToggleEvent} e */
-  function onAskNoteToggle(e) {
-    askNoteButton.ariaExpanded = String(e.newState === 'open');
-    if (e.newState === 'open') placeAskNote();
+  // An ⓘ note opens over `row`, as wide as `box`, and its button says whether it is open.
+  /** @param {HTMLElement} note @param {HTMLButtonElement} button @param {Element} box @param {Element} row */
+  function noteOver(note, button, box, row) {
+    const place = () => {
+      const { left, width } = box.getBoundingClientRect();
+      note.style.left = `${left}px`;
+      note.style.width = `${width}px`;
+      note.style.bottom = `${root.clientHeight - row.getBoundingClientRect().top + POPOVER_GAP}px`;
+    };
+    note.addEventListener('beforetoggle', (e) => {
+      button.ariaExpanded = String(e.newState === 'open');
+      if (e.newState === 'open') place();
+    });
+    window.addEventListener('resize', () => note.matches(':popover-open') && place());
   }
 
   /** @param {ToggleEvent} e */
@@ -8482,11 +8546,11 @@
         return oneDocument(file, { why: `Couldn't unzip it: ${explain(error, /** @type {Error} */ (error).message, "couldn't unzip a file")}.` });
       }
     },
-    newRun: (question, files) => liveRun(question, pickedModel(), pickedEndpoint(), files, pickedRounds(), pickedEvidence()),
+    newRun: (question, files) => liveRun(question, pickedModel(), pickedEndpoint(), files, pickedRounds(), pickedEvidence(), pickedCap()),
     play: streamRun,
     runGoing: (tab) => streaming('run', tab),
     stop: (tab) => toStop(tab).forEach(stopJob),
-    ask: (tab, question) => askOver(tab, question, pickedModel(), pickedEndpoint()),
+    ask: (tab, question) => askOver(tab, question, pickedModel(), pickedEndpoint(), pickedCap()),
     saveKey: async (provider, key) => (await api('/api/keys', { method: 'POST', body: { provider, key } })).json(),
     saveServer: async (endpoint, key) => (await api('/api/keys', { method: 'POST', body: { provider: 'other', endpoint, key: key || undefined } })).json(),
     forgetKey: async (provider) => (await api('/api/keys', { method: 'DELETE', body: { provider } })).json(),

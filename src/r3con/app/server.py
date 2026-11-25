@@ -80,8 +80,8 @@ a reload reads.
   ``MAX_ZIP_ENTRIES`` entries, or whose documents would unzip to more than
   ``MAX_ZIP_BYTES``, is refused (422).
 - ``POST /api/runs`` (``{question, model, endpoint?, documents: [text, ...], names?:
-  [name, ...], summary_rounds?, evidence_level?}``) starts ``r3con.run`` and answers
-  ``{run_id}``;
+  [name, ...], summary_rounds?, evidence_level?, max_tokens?}``) starts ``r3con.run``
+  and answers ``{run_id}``;
   ``GET /api/runs/{run_id}/events`` streams its events as ``text/event-stream``, from
   the first, until ``run_finished`` or ``run_failed``. ``names``, one per document, are
   the documents' names, a name given again numbered (``r3con.documents.unique_names``:
@@ -91,11 +91,16 @@ a reload reads.
   given. ``evidence_level`` is ``"sentence"``, for relevance summaries that quote the
   sentences they are based on, or ``"document"``, for summaries that quote none, whose
   trail still reaches the documents; r3con's config decides it if not given. An ask
-  reuses its run's representation, so it takes neither.
-- ``POST /api/runs/{run_id}/asks`` (``{question, model, endpoint?}``) starts
-  ``r3con.ask`` over a run that has ended and answers ``{ask_id}``;
+  reuses its run's representation, so it takes neither. ``max_tokens``, from 1 to
+  ``MAX_TOKEN_CAP``, caps the tokens each of the run's model calls may answer with,
+  sent to r3con as the param of that name beside its config's params; with none, a run
+  sends what its config does.
+- ``POST /api/runs/{run_id}/asks`` (``{question, model, endpoint?, max_tokens?}``)
+  starts ``r3con.ask`` over a run that has ended and answers ``{ask_id}``;
   ``GET /api/asks/{ask_id}/events`` streams its events until ``ask_finished`` or
-  ``ask_failed``.
+  ``ask_failed``. Its ``max_tokens`` caps its calls as a run's does, whatever cap its
+  run had: with none, it has none, and its other params are those ``r3con.ask`` sends
+  by default, the run's on the run's model.
 - ``POST /api/runs/{run_id}/continue`` (``{documents, names?}``, the run's documents
   again, as ``POST /api/runs`` took them) carries on, in its folder (``r3con.resume``),
   the run of ``run_id``, a run or a continue this server started that failed or was
@@ -119,7 +124,8 @@ a reload reads.
   ``r3con.ask`` reads of its folder, each file in ``REPRESENTATION_FILES`` by its path
   there: what a tab saved as one file needs to ask again. Its manifest leaves out its
   ``sources``, which are paths on this computer, and its config's ``params``, empty,
-  which a config file where the server runs may fill with a server's URL or headers.
+  and their override, which a config file where the server runs may fill with a
+  server's URL or headers.
   Nothing else there names a run's server or key: the server passes them with each
   call. A run folder that can't be read is refused (409).
 - ``POST /api/saves?name=<file name>``, with a saved tab's ``.html`` as the body, asks
@@ -226,7 +232,13 @@ from starlette.routing import Route
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from r3con import r3con
-from r3con.config import DEFAULT_CONFIG, EvidenceLevel, PromptStage, RunConfig
+from r3con.config import (
+    DEFAULT_CONFIG,
+    EvidenceLevel,
+    PromptStage,
+    RunConfig,
+    load_config,
+)
 from r3con.documents import (
     _EXTRACTORS,
     _MACOS_METADATA_FOLDER,
@@ -245,6 +257,7 @@ from r3con.pipeline import (
     OtherDocuments,
     Resumable,
     RunFinished,
+    ask_config,
     read_representation,
     read_resume,
     resumable_folder,
@@ -366,6 +379,9 @@ NOT_ONE_INDEX_EACH = (
 # r3con's default config runs two rounds; each one more is another call per document.
 DEFAULT_SUMMARY_ROUNDS = 2
 MAX_SUMMARY_ROUNDS = 4
+# The litellm param a token cap is sent as, and the largest cap: past any model's output.
+TOKEN_CAP_PARAM = "max_tokens"
+MAX_TOKEN_CAP = 1_000_000
 CONTINUE_REFUSALS = {
     "going": "This run is still going: try again once it has stopped.",
     "finished": "This run has finished: ask it a new question instead.",
@@ -421,6 +437,7 @@ def _one_per_document(
 
 
 Text = Annotated[str, AfterValidator(_not_blank)]
+TokenCap = Annotated[int, Field(ge=1, le=MAX_TOKEN_CAP, strict=True)]
 Secret = Annotated[SecretStr, AfterValidator(_stripped_secret)]
 Endpoint = Annotated[
     str,
@@ -440,6 +457,7 @@ class RunRequest(BaseModel):
         DEFAULT_SUMMARY_ROUNDS
     )
     evidence_level: EvidenceLevel | None = None
+    max_tokens: TokenCap | None = None
     _one_name_each = field_validator("names")(_one_per_document)
 
 
@@ -521,6 +539,7 @@ class AskRequest(BaseModel):
     question: Text
     model: Text
     endpoint: Endpoint | None = None
+    max_tokens: TokenCap | None = None
 
 
 class ProviderKey(BaseModel):
@@ -972,16 +991,45 @@ def _named(body: RunRequest | ContinueRequest) -> dict[str, str] | list[str]:
     return dict(zip(unique_names(body.names), body.documents, strict=True))
 
 
+def _capped_run(
+    question: str,
+    documents: dict[str, str] | list[str],
+    *,
+    max_tokens: int | None,
+    **options: Any,
+) -> Any:
+    """``r3con.run``, its calls capped at ``max_tokens`` output tokens beside the params
+    of the config it runs under, or, given none, as that config has them."""
+    params = None
+    if max_tokens is not None:
+        params = {**load_config(DEFAULT_CONFIG).params, TOKEN_CAP_PARAM: max_tokens}
+    return r3con.run(question, documents, params=params, **options)
+
+
+def _capped_ask(
+    run_dir: Path, question: str, *, model: str, max_tokens: int | None, **options: Any
+) -> Any:
+    """``r3con.ask``, its calls capped at ``max_tokens`` output tokens, or at none if not
+    given, whatever its run's cap; its other params those it sends by default."""
+    params = ask_config(read_representation(run_dir), model=model).params
+    capped = {name: value for name, value in params.items() if name != TOKEN_CAP_PARAM}
+    if max_tokens is not None:
+        capped[TOKEN_CAP_PARAM] = max_tokens
+    sent = None if capped == params else capped
+    return r3con.ask(run_dir, question, model=model, params=sent, **options)
+
+
 async def start_run(request: Request) -> Response:
     state = _state(request)
     body = await _read(request, RunRequest.model_validate_json)
     run = partial(
-        r3con.run,
+        _capped_run,
         body.question,
         _named(body),
         model=body.model,
         summary_rounds=body.summary_rounds,
         evidence_level=body.evidence_level,
+        max_tokens=body.max_tokens,
         logs_dir=state.logs_dir,
         **_model_options(state, body.model, body.endpoint),
     )
@@ -1150,10 +1198,11 @@ async def start_ask(request: Request) -> Response:
     run_dir = _run_dir(state, request.path_params["run_id"])
     body = await _read(request, AskRequest.model_validate_json)
     ask = partial(
-        r3con.ask,
+        _capped_ask,
         run_dir,
         body.question,
         model=body.model,
+        max_tokens=body.max_tokens,
         **_model_options(state, body.model, body.endpoint),
     )
     return JSONResponse({"ask_id": _start(state, "ask", ask)}, status_code=202)
@@ -1173,6 +1222,7 @@ def _representation(run_dir: Path) -> dict[str, Any]:
     manifest.pop(LOCAL_PATHS, None)
     # A config file where the server runs may set params such as api_base or headers.
     manifest["config"]["params"] = {}
+    manifest["config"].get("overrides", {}).pop("params", None)
     return files
 
 

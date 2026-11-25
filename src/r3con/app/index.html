@@ -43,6 +43,10 @@
         <label for="rounds">summary rounds</label>
         <select class="field" id="rounds"></select>
       </div>
+      <div class="cap" id="cap-row">
+        <span class="cap-head"><label for="token-cap">token cap</label><button class="btn" id="cap-note-btn" type="button" popovertarget="cap-note" aria-controls="cap-note" aria-expanded="false" aria-label="about the token cap">ⓘ</button></span>
+        <input class="field" id="token-cap" type="text" inputmode="numeric" autocomplete="off" spellcheck="false" placeholder="e.g. 8192">
+      </div>
     </div>
   </div>
 
@@ -59,6 +63,10 @@
   <div class="ask-note" id="ask-note" popover>
     <p><strong>Follow-up</strong> questions should be closely related to the first question. They're quick and cheap, but can only answer very related questions.</p>
     <p><strong>Ask</strong> runs the full pipeline again in a new tab, so it can answer accurately.</p>
+  </div>
+
+  <div class="cap-note" id="cap-note" popover>
+    <p><strong>Token cap:</strong> Maximum tokens per call. By default we don't have one. We suggest that with smaller or newer models to put a cap of 8192: they can get stuck in repetition loops, and this helps us catch this and retry early. Please be careful with reasoning models as the thinking tokens count in the maximum. Increase for heavy reasoning.</p>
   </div>
 
   <div class="frame" id="frame">
