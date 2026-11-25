@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 
 from r3con import Answer, Cancelled, ask, resume, run, settings, trace
 from r3con.config import EVIDENCE_LEVELS
@@ -31,6 +32,7 @@ QUESTION = "Who?"
 HALLORAN = "The Halloran memo logs two sites."
 MERROW = "The Merrow memo logs two sites."
 ANSWER = f"{HALLORAN} {MERROW}"
+CALDER = "The Calder memo logs two sites."
 SENTENCE_SYSTEM = """You will be given a question and an answer that is supported by a collection of quotes. Your job is to extract the exact claims made in the answer, word for word (each sentence, clause, list item or table row; split a sentence that makes several claims into its parts, each word for word), so that each claim can be checked against the quotes on its own.
 Return exactly one JSON object with the key `claims`, a list of the claims' texts. Output only that JSON.
 Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Do not list quote IDs.
@@ -355,6 +357,18 @@ def test_a_claim_keeps_its_direct_quotes_alone_and_each_call_is_named_for_it(
     }
 
 
+def test_the_transcript_is_the_split_call_whichever_linking_call_ends_last(
+    quoting_llm, tmp_path
+):
+    result = claimed(quoting_llm, tmp_path, (HALLORAN, ["q2"]), (MERROW, ["q4"]))
+    transcript = yaml.safe_load((result.run_dir / "claims/transcript.yaml").read_text())
+    assert [(m["role"], m["content"]) for m in transcript["messages"]] == [
+        ("system", SENTENCE_SYSTEM),
+        ("user", QUESTION_AND_ANSWER + QUOTES),
+        ("assistant", json.dumps({"claims": [HALLORAN, MERROW]})),
+    ]
+
+
 def test_the_evidence_trail_is_what_the_claims_cite_in_the_answer_folder_and_event(
     quoting_llm, tmp_path, events_in
 ):
@@ -668,6 +682,44 @@ def test_a_cancel_during_the_claims_call_leaves_no_claims_and_finishes_the_run(
     assert saved["claims"] == []
     with pytest.raises(ValueError, match="this run finished"):
         resume(result.run_dir, TWO_LINE_MEMOS, completion=quoting_llm)
+
+
+def test_a_cancel_during_a_linking_call_leaves_its_claim_and_those_after_unlinked(
+    quoting_llm, tmp_path, caplog, events_in, one_worker
+):
+    caplog.set_level(logging.WARNING, logger="r3con")
+    cancel = threading.Event()
+    links = linking_reply({HALLORAN: ["q2"]})
+
+    # One claim linked at a time: Halloran's, then Merrow's, whose reply does not fit,
+    # so its call would be sent again but for the cancel, then Calder's.
+    def linking(request):
+        if linked_claim(request) == HALLORAN:
+            return links(request)
+        return cancelling(cancel, "not JSON")(request)
+
+    quoting_llm.answers(
+        reasoning=citing(f"{ANSWER} {CALDER}", slice(None)),
+        claims=claims_reply((HALLORAN, []), (MERROW, []), (CALDER, [])),
+        linking=linking,
+    )
+    result = run_memos(quoting_llm, tmp_path, cancel=cancel)
+    trail = result.provenance["relevant_trail"]
+    linked, *unlinked = result.provenance["claims"]
+    assert (linked["text"], linked["quotes"]) == (HALLORAN, [place(trail["quotes"][1])])
+    assert [(c["text"], c["documents"], c["quotes"]) for c in unlinked] == [
+        (MERROW, [], []),
+        (CALDER, [], []),
+    ]
+    sent = [linked_claim(r) for r in quoting_llm.requests_for("linking")]
+    assert sent == [HALLORAN, MERROW]
+    for k in (2, 3):
+        assert (
+            f"claims: claim {k} keeps no quotes, as its linking call failed: {CANCELLED}"
+        ) in caplog.text
+    assert events_in(result.run_dir)[-1]["type"] == "run_finished"
+    saved = json.loads((result.run_dir / "claims" / "result.json").read_text())
+    assert saved["claims"] == result.provenance["claims"]
 
 
 def test_a_cancel_during_the_claims_call_of_an_ask_finishes_the_ask(

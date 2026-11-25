@@ -227,7 +227,7 @@ def test_only_a_sentence_level_config_needs_the_linking_prompt(configs):
         "config 'sentence' is missing prompt versions for stage(s): ['linking']"
     )
     document = load_config("document")
-    assert document.prompt_stages == PROMPT_STAGES[:-1]
+    assert document.prompt_stages == tuple(s for s in PROMPT_STAGES if s != "linking")
     assert "linking" not in document.label()
 
 

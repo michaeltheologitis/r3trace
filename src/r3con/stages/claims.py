@@ -43,7 +43,7 @@ from r3con.stages.relevance import RelevantContext, SnippetRecord
 
 _log = get_logger("claims")
 
-_KIND = "claims"
+_CLAIMS = "claims"
 _LINKING = "linking"
 _REWRITE = "Extract the same answer's claims again"
 _LINK_AGAIN = "Name the quotes that support the same claim again"
@@ -114,6 +114,7 @@ def find_claims(
     if not evidence:
         _log.info("claims: the answer's relevant trail holds no evidence, so no call")
         return []
+    ids = list(evidence)
     send = functools.partial(
         _reply,
         splits=splits,
@@ -123,7 +124,7 @@ def find_claims(
         **llm_kwargs,
     )
     found = send(
-        load_prompt("claims", version=prompts["claims"], evidence_level=evidence_level),
+        load_prompt(_CLAIMS, version=prompts[_CLAIMS], evidence_level=evidence_level),
         _USER_MESSAGE.render(
             question=question,
             answer=answer,
@@ -131,24 +132,27 @@ def find_claims(
             heading=level.heading,
             evidence=evidence,
         ),
-        level.reply(list(evidence)),
-        kind=_KIND,
+        level.reply(ids),
+        kind=_CLAIMS,
         rewrite=_REWRITE,
         warning="claims: none, as their",
     )
     if found is None:
         return []
+    claims = found["claims"]
     if evidence_level == "document":
+        texts = [claim["text"] for claim in claims]
         return [
-            _supported(answer, start, end, claim["document_ids"], evidence, _KIND)
-            for start, end, claim in _placed(found["claims"], answer)
+            _supported(answer, start, end, claims[n]["document_ids"], evidence, _CLAIMS)
+            for start, end, n in _placed(texts, answer)
         ]
-    placed = _placed([{"text": text} for text in found["claims"]], answer)
+    if run is not None:
+        # The linking calls finish in any order: transcript.yaml shows the split.
+        run.hold_transcript()
     system_prompt = load_prompt(_LINKING, version=prompts[_LINKING])
-    ids = list(evidence)
     schema = create_model("Linking", direct=ids_field(ids), context=ids_field(ids))
 
-    def link(k: int, span: tuple[int, int, Mapping[str, Any]]) -> Claim:
+    def link(k: int, span: tuple[int, int, int]) -> Claim:
         start, end, _ = span
         kind = f"{_LINKING}-c{k + 1}"
         user_message = _LINKING_MESSAGE.render(
@@ -165,7 +169,7 @@ def find_claims(
         direct = linked["direct"] if linked is not None else []
         return _supported(answer, start, end, direct, evidence, kind)
 
-    return parallel_map(link, placed, max_workers=workers)
+    return parallel_map(link, _placed(claims, answer), max_workers=workers)
 
 
 def _reply(
@@ -295,32 +299,31 @@ def _supported(
     )
 
 
-def _placed(
-    claims: Sequence[Mapping[str, Any]], answer: str
-) -> list[tuple[int, int, Mapping[str, Any]]]:
-    """Each claim's span in ``answer``, sorted, or the claim dropped with a warning."""
-    placed: list[tuple[int, int, Mapping[str, Any]]] = []
-    misses: list[tuple[str, Mapping[str, Any]]] = []
+def _placed(texts: Sequence[str], answer: str) -> list[tuple[int, int, int]]:
+    """Each claim's span in ``answer`` and its index in ``texts``, sorted, or the claim
+    dropped with a warning."""
+    placed: list[tuple[int, int, int]] = []
+    misses: list[tuple[str, int]] = []
     cursor = 0
     # Verbatim from the last one's end, so a sentence said twice lands where it is.
-    for claim in claims:
-        text = claim["text"].strip()
+    for n, claim in enumerate(texts):
+        text = claim.strip()
         start = answer.find(text, cursor) if text else -1
         if start >= 0:
             cursor = start + len(text)
-            placed.append((start, cursor, claim))
+            placed.append((start, cursor, n))
         elif text:
-            misses.append((text, claim))
+            misses.append((text, n))
         else:
             _log.warning("claims: dropped a blank claim")
     # The rest in one call, which normalizes the answer once.
     located = locate_quotes([text for text, _ in misses], answer)
-    for (text, claim), quote in zip(misses, located, strict=True):
+    for (text, n), quote in zip(misses, located, strict=True):
         start, end = quote["start"], quote["end"]
         if start is None or end is None:
             _log.warning("claims: dropped a claim not found in the answer: %r", text)
         elif any(start < other_end and other < end for other, other_end, _ in placed):
             _log.warning("claims: dropped a claim that overlaps another: %r", text)
         else:
-            placed.append((start, end, claim))
+            placed.append((start, end, n))
     return sorted(placed, key=itemgetter(0))

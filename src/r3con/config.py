@@ -34,7 +34,7 @@ Config file shape (``configs/<name>.yaml``)::
       structuring/parsing: v3
       reasoning/direct: v3
       reasoning/coding: v3
-      claims: v1                 # read only when claims are on
+      claims: v3                 # read only when claims are on
       linking: v1                # read only when claims are on, at the sentence level
     params:                      # optional; passed straight to litellm.completion
       temperature: 0.7
