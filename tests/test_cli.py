@@ -388,8 +388,8 @@ def test_a_config_pinning_a_stage_r3con_does_not_have_exits_2_in_one_line(
     assert capsys.readouterr().err == (
         "r3con: config 'old': `prompts.relevance`: Input should be "
         "'relevance/first-round', 'relevance/later-rounds', 'structuring/schema', "
-        "'structuring/parsing', 'reasoning/direct', 'reasoning/coding' or "
-        "'claims'.\n"
+        "'structuring/parsing', 'reasoning/direct', 'reasoning/coding', 'claims' "
+        "or 'linking'.\n"
     )
     assert scripted.requests == []
 

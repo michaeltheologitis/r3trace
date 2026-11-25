@@ -23,7 +23,7 @@ from r3con.provenance import Trail
 
 _completion = litellm.completion
 
-Stage = Literal["relevance", "schema", "parsing", "reasoning", "claims"]
+Stage = Literal["relevance", "schema", "parsing", "reasoning", "claims", "linking"]
 Request = dict[str, Any]
 
 
@@ -65,7 +65,7 @@ class Parse(BaseModel):
 </schema>"""
 # The line, and the blank one after it, that heads a parse request's user message.
 PARSE_HEADING = re.compile(r"\ADocument ID: (\w+)\n\n")
-# The heading of each piece of evidence a claims request shows.
+# The heading of each piece of evidence a claims or linking request shows.
 EVIDENCE_HEADING = re.compile(r"^### (?:Quote|Document) ID: (\S+)$", re.MULTILINE)
 GATE_TIMEOUT_SECONDS = 10
 UNSCRIPTED_SHOWN_CHARS = 200
@@ -116,6 +116,7 @@ def stage_of(request: Request) -> Stage:
             "RelevanceSummary": "relevance",
             "ReasoningAnswer": "reasoning",
             "Claims": "claims",
+            "Linking": "linking",
         }
         return by_schema.get(schema, "parsing")
     messages = request["messages"]
@@ -271,27 +272,50 @@ def joined_rows(request: Request) -> Content:
 
 
 def claimed_answer(request: Request) -> str:
-    """The answer a claims ``request`` shows."""
+    """The answer a claims or linking ``request`` shows."""
     user = request["messages"][1]["content"]
     return user.split("\n<answer>\n", 1)[1].split("\n</answer>\n", 1)[0]
 
 
+def linked_claim(request: Request) -> str:
+    """The claim a linking ``request`` shows."""
+    user = request["messages"][1]["content"]
+    return user.split("\n<claim>\n", 1)[1].split("\n</claim>\n", 1)[0]
+
+
 def shown_evidence(request: Request) -> list[str]:
-    """The ids of the evidence a claims ``request`` shows, in order."""
+    """The ids of the evidence a claims or linking ``request`` shows, in order."""
     user = request["messages"][1]["content"]
     return EVIDENCE_HEADING.findall(user.split("\n</answer>\n", 1)[1])
 
 
 def claims_reply(*claims: tuple[str, list[str]]) -> Callable[[Request], Content]:
     """A claims reply of ``claims``, each its text and the ids that support it, in the
-    field the request's schema names for them."""
+    field the request's schema names for them; or, for a request whose schema asks for
+    the texts alone, as a sentence-level one does, their texts, the ids being for the
+    linking calls (:func:`linking_reply`)."""
 
     def reply(request: Request) -> Content:
         schema = request["response_format"]["json_schema"]["schema"]
+        if "$defs" not in schema:
+            return {"claims": [text for text, _ in claims]}
         ids = next(
             key for key in schema["$defs"]["Claim"]["properties"] if key != "text"
         )
         return {"claims": [{"text": text, ids: cited} for text, cited in claims]}
+
+    return reply
+
+
+def linking_reply(
+    links: Mapping[str, list[str]], context: Sequence[str] = ()
+) -> Callable[[Request], Content]:
+    """A linking reply whose ``direct`` ids are those ``links`` gives the claim the
+    request shows, none for a claim it leaves out, and whose ``context`` ids are
+    ``context``."""
+
+    def reply(request: Request) -> Content:
+        return {"direct": links.get(linked_claim(request), []), "context": [*context]}
 
     return reply
 
@@ -302,12 +326,18 @@ def claiming_the_answer(request: Request) -> Content:
     return claims_reply((claimed_answer(request), shown_evidence(request)))(request)
 
 
+def linking_to_all(request: Request) -> Content:
+    """A linking reply linking the claim to all the evidence shown."""
+    return {"direct": shown_evidence(request), "context": []}
+
+
 ANSWERING: dict[str, Content | Callable[[Request], Content]] = {
     "relevance": lambda request: f"Notes on {first_line(request)}.",
     "schema": ANSWERING_SCHEMA,
     "parsing": lambda request: {"rows": [{"who": first_line(request)}]},
     "reasoning": joined_rows,
     "claims": claiming_the_answer,
+    "linking": linking_to_all,
 }
 """What ``answering_llm`` answers each stage with, so that any run completes: each
 document's first line is its note and its one parsed row, the answer joins the rows,

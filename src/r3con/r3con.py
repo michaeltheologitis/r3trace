@@ -130,10 +130,11 @@ def run(
             summary quote the sentences of its document it is based on;
             ``"document"`` asks for no quotes, so the relevant trail's ``quotes`` are
             empty and its ``documents`` name the documents the trail ends at.
-        claims: overrides the config's: whether one more call, after reasoning, finds
-            the claims the answer makes, each with the quotes, or at the document
-            level the documents, that support it, in
-            ``result.provenance["claims"]``. Off, it is empty.
+        claims: overrides the config's: whether, after reasoning, the answer is split
+            into its claims, in ``result.provenance["claims"]``, and each is linked
+            to the quotes that directly support it, one call per claim, or at the
+            document level, in the one call, to the documents that support it. Off,
+            it is empty.
         params: extra keyword arguments passed straight to ``litellm.completion`` —
             ``temperature``, ``top_p``, ``seed``, ``extra_body``, anything it accepts.
         api_key, api_base: passed through to litellm. Usually unnecessary: litellm reads
@@ -173,7 +174,8 @@ def run(
             ``num_retries``, ``max_retries`` or ``retry_policy`` in ``params``; and a
             step the coding path is running in its sandbox, to its end or its
             timeout. Once reasoning has answered, the run finishes with its answer:
-            claims not yet found are left out, with no ``run_failed``.
+            claims not yet found are left out, and a claim not yet linked has no
+            quotes, with no ``run_failed``.
 
     Returns:
         An :class:`~r3con.pipeline.Answer`: the answer text (``.answer``, and

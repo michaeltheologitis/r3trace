@@ -1107,7 +1107,7 @@ def test_no_request_carries_a_seed_unless_params_sets_one(answering_llm):
 def test_each_stage_renders_the_prompt_version_its_config_pins(
     answering_llm, shown_ids, tmp_path, reasoning
 ):
-    versions = dict(zip(PROMPT_STAGES, [f"v{c}" for c in "ABCDEFG"], strict=True))
+    versions = dict(zip(PROMPT_STAGES, [f"v{c}" for c in "ABCDEFGH"], strict=True))
     for stage, version in versions.items():
         prompt = yaml.safe_load((settings.PROMPTS_DIR / stage / "v1.yaml").read_text())
         prompt["instructions"] += f"\nMARKER-{version}"
@@ -1120,13 +1120,15 @@ def test_each_stage_renders_the_prompt_version_its_config_pins(
     )
     answer(llm, prompts=versions, reasoning=reasoning)
     relevance = system_prompts(llm, "relevance")
-    later = ["vC", "vD", versions[f"reasoning/{reasoning}"], "vG"]
+    later = ["vC", "vD", versions[f"reasoning/{reasoning}"], "vG", "vH"]
     sent = {
         "vA": relevance[: len(DOCS)],
         "vB": relevance[len(DOCS) :],
         **{
             version: system_prompts(llm, stage)
-            for version, stage in zip(later, [*LATER_STAGES, "claims"], strict=True)
+            for version, stage in zip(
+                later, [*LATER_STAGES, "claims", "linking"], strict=True
+            )
         },
     }
     for version, prompts in sent.items():
@@ -1748,12 +1750,13 @@ def test_each_finished_event_carries_what_the_run_folder_records(
         {"claims": claims, "evidence_trail": evidence}
     ]
     assert [claim["text"] for claim in claims] == ["Halloran memo"]
-    # Each of the 12 calls, the claims call among them, costs $10.
+    # Each of the 13 calls, the claims call and its claim's linking call among them,
+    # costs $10.
     assert by_type["run_finished"] == [
         {
             "run_dir": str(logger.dir),
-            "tokens": {"prompt": 120, "completion": 240, "total": 360},
-            "usd": 120.0,
+            "tokens": {"prompt": 130, "completion": 260, "total": 390},
+            "usd": 130.0,
         }
     ]
 

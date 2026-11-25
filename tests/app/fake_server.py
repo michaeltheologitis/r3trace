@@ -9,7 +9,8 @@ lines nested under it, or nothing for a document holding ``UNPARSED``; each roun
 after the first cites the first summary it is shown, each parse its own document's
 note, and the answer, two sentences, the first two documents' summaries and parses.
 Of the answer's claims, its first sentence rests on the first two pieces of evidence
-the claims call is shown, and its second on none. A document holding ``FADES`` gets no
+the claims call is shown, or at the sentence level its linking call, and its second
+on none. A document holding ``FADES`` gets no
 summary from its ``FADES_FROM_READ``-th read on, its reads counted from the server's
 start, so that a check reading it whole once a round, with text of its own, has its
 note go empty in that round. It refuses a document over ``PART_CHARS`` as too long, so
@@ -56,6 +57,7 @@ from tests.fakes import (
     FakeKeyring,
     claims_reply,
     is_later_round,
+    linking_reply,
     mock_completion,
     shown_evidence,
     stage_of,
@@ -148,6 +150,9 @@ def content(request: dict[str, Any], stage: str) -> str:
     if stage == "claims":
         supported = shown_evidence(request)[:CITED_PER_VIEW]
         return json.dumps(claims_reply((LINKED, supported), (UNLINKED, []))(request))
+    if stage == "linking":
+        supported = shown_evidence(request)[:CITED_PER_VIEW]
+        return json.dumps(linking_reply({LINKED: supported})(request))
     if stage == "relevance":
         summary = "" if faded(user) else summary_of(user)
         reply = {

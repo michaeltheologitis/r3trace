@@ -5966,13 +5966,13 @@
   }
 
   // ---------- sentence links ----------
-  // Once the answer is in, one more call links each of its sentences to the evidence that supports it. A linked
+  // Once the answer is in, the claims calls link each of its sentences to the evidence that supports it. A linked
   // sentence lights its own path on the trail while hovered or focused, and opens its evidence when pressed.
 
   /** @param {Tab} tab @param {string} id */
   const saidAnswer = (tab, id) => /** @type {HTMLElement | null} */ (tab.chat.querySelector(`.line.answer[data-node="${id}"]`));
 
-  // Under the answer and its sentences, a line with the running mark while the call is out.
+  // Under the answer and its sentences, a line with the running mark while the calls are out.
   /** @param {RunTab} tab @param {string} id */
   function startLinking(tab, id) {
     const said = saidAnswer(tab, id);

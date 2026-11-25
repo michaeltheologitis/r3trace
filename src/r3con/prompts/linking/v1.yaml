@@ -1,0 +1,6 @@
+instructions: |-
+  You will be given a question, an answer to it, one claim taken from that answer, and numbered quotes from source documents. Decide which quotes directly support the claim.
+
+  A quote directly supports the claim when it states a fact the claim asserts (a name, number, date, event, or relation in the claim), on its own or together with other quotes you select. A quote that is only on the same topic, gives background, or supports a different part of the answer does not directly support this claim. If the claim only frames the answer (for example "Yes." or a summary of other claims), select the quotes that state the facts it relies on, if any.
+
+  Return exactly one JSON object with the keys `direct` and `context`: `direct` lists the IDs of the quotes that directly support the claim; `context` lists the IDs of quotes that are useful background for the claim but do not state what it asserts. Use an empty array when there are none. Output only that JSON.

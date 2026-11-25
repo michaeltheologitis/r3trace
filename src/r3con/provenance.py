@@ -35,10 +35,11 @@ under :data:`DEFAULT_RULE`
 saved run's folder, under any rule.
 
 An answer's whole provenance (:class:`AnswerProvenance`, :func:`with_claims`) adds its
-``claims``, which a last model call finds after reasoning (:mod:`r3con.stages.claims`),
-and its evidence trail, the part of the relevant trail they rest on
-(:func:`evidence_trail`). A claim names its quotes by their place, the same under any
-rule, so it finds them among the ``quotes`` of a relevant trail under any rule.
+``claims``, which the last model calls find after reasoning
+(:mod:`r3con.stages.claims`), and its evidence trail, the part of the relevant trail
+they rest on (:func:`evidence_trail`). A claim names its quotes by their place, the
+same under any rule, so it finds them among the ``quotes`` of a relevant trail under
+any rule.
 """
 
 from __future__ import annotations

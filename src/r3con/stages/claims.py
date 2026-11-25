@@ -1,17 +1,26 @@
-"""After reasoning: link each claim of the answer to the evidence that supports it.
+"""After reasoning: split the answer into its claims, and link each to the evidence
+that supports it.
 
-An answer alone does not say which of its sentences rests on what, so one more call,
-to reasoning's model with its params, is shown the question, the answer, and the
-evidence on the answer's trail, each piece under an id. It copies out the answer's
-claims, each sentence, clause, list item or table row, with the ids of all the
-evidence that supports any part of each, and each claim is then found in the answer.
-The evidence is the relevant trail's quotes at the ``"sentence"`` evidence level, and
-at ``"document"`` each of its documents' round-1 relevance summary, the one written
-from that document alone.
+An answer alone does not say which of its sentences rests on what. At the
+``"sentence"`` evidence level, one call, to reasoning's model with its params, is shown
+the question, the answer, and the quotes on the answer's relevant trail, each under an
+id, and copies out the answer's claims, each sentence, clause, list item or table row,
+which are then found in the answer. Then one call per claim found, in parallel, is
+shown the question, the answer, that claim, and the same quotes, each with its
+document's name, and names those that directly support the claim and those that are
+only background to it: the claim keeps the first, and their documents. At
+``"document"``, the one call copies out the claims with the ids of every document whose
+round-1 relevance summary, the one written from that document alone, supports each.
+
+None of it fails the run: with no evidence to show, a claims request over the model's
+line, or a claims call that fails or is cancelled, there are no claims; a linking
+request over the line, or a linking call that fails or is cancelled, leaves its claim
+no quotes and no documents.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 from collections.abc import Callable, Mapping, Sequence
 from operator import itemgetter
@@ -22,6 +31,7 @@ from pydantic import BaseModel, create_model
 
 from r3con.config import EvidenceLevel, PromptStage
 from r3con.logging_setup import get_logger
+from r3con.parallel import parallel_map
 from r3con.prompts import load_prompt
 from r3con.provenance import Claim, NamedQuote, QuotePlace, RelevantTrail
 from r3con.quotes import locate_quotes
@@ -34,7 +44,9 @@ from r3con.stages.relevance import RelevantContext, SnippetRecord
 _log = get_logger("claims")
 
 _KIND = "claims"
+_LINKING = "linking"
 _REWRITE = "Extract the same answer's claims again"
+_LINK_AGAIN = "Name the quotes that support the same claim again"
 _USER_MESSAGE = jinja2.Template(
     "<question>\n{{ question }}\n</question>\n"
     "<answer>\n{{ answer }}\n</answer>\n"
@@ -44,25 +56,38 @@ _USER_MESSAGE = jinja2.Template(
     "{% endfor %}"
     "</{{ tag }}>"
 )
+_LINKING_MESSAGE = jinja2.Template(
+    "<question>\n{{ question }}\n</question>\n"
+    "<answer>\n{{ answer }}\n</answer>\n"
+    "<claim>\n{{ claim }}\n</claim>\n"
+    "<quotes>\n"
+    "{% for id, quote in quotes.items() %}"
+    "### Quote ID: {{ id }}\n(from: {{ quote.name }})\n{{ quote.text }}\n"
+    "{% endfor %}"
+    "</quotes>"
+)
 
 
 class _Piece(NamedTuple):
-    """A piece of evidence shown: its text, its document, and a quote's place."""
+    """A piece of evidence shown: its text, its document's id and name, and a quote's
+    place."""
 
     text: str
     document: str
+    name: str
     quote: QuotePlace | None
 
 
 class _Level(NamedTuple):
-    """What varies by evidence level: the evidence, how it is shown, and its ids."""
+    """What varies by evidence level: the evidence, how it is shown, and the claims
+    call's reply, given the evidence's ids."""
 
     evidence: Callable[
         [RelevantTrail, RelevantContext, Sequence[str]], dict[str, _Piece]
     ]
     tag: str
     heading: str
-    ids_key: str
+    reply: Callable[[Sequence[str]], type[BaseModel]]
 
 
 def find_claims(
@@ -77,62 +102,110 @@ def find_claims(
     model: str,
     max_attempts: int,
     splits: Splits,
+    workers: int,
     run: StageRun | None = None,
     **llm_kwargs: Any,
 ) -> list[Claim]:
     """The claims ``answer`` makes, each with the evidence on its ``relevant_trail``
-    that supports it, in the answer's order. It never fails the run: with no evidence
-    to show, a request over the model's line, or a call that fails or is cancelled,
-    there are none."""
+    that supports it, in the answer's order, as the module says, at most ``workers``
+    linking calls under way at once. It never fails the run."""
     level = _LEVELS[evidence_level]
     evidence = level.evidence(relevant_trail, relevance, document_ids)
     if not evidence:
         _log.info("claims: the answer's relevant trail holds no evidence, so no call")
         return []
-    system_prompt = load_prompt(
-        "claims", version=prompts["claims"], evidence_level=evidence_level
+    send = functools.partial(
+        _reply,
+        splits=splits,
+        max_attempts=max_attempts,
+        model=model,
+        run=run,
+        **llm_kwargs,
     )
-    user_message = _USER_MESSAGE.render(
-        question=question,
-        answer=answer,
-        tag=level.tag,
-        heading=level.heading,
-        evidence=evidence,
+    found = send(
+        load_prompt("claims", version=prompts["claims"], evidence_level=evidence_level),
+        _USER_MESSAGE.render(
+            question=question,
+            answer=answer,
+            tag=level.tag,
+            heading=level.heading,
+            evidence=evidence,
+        ),
+        level.reply(list(evidence)),
+        kind=_KIND,
+        rewrite=_REWRITE,
+        warning="claims: none, as their",
     )
-    fields: dict[str, Any] = {
-        "text": (str, ...),
-        level.ids_key: ids_field(list(evidence)),
-    }
-    schema = create_model(
-        "Claims", claims=lenient_list(create_model("Claim", **fields))
-    )
+    if found is None:
+        return []
+    if evidence_level == "document":
+        return [
+            _supported(answer, start, end, claim["document_ids"], evidence, _KIND)
+            for start, end, claim in _placed(found["claims"], answer)
+        ]
+    placed = _placed([{"text": text} for text in found["claims"]], answer)
+    system_prompt = load_prompt(_LINKING, version=prompts[_LINKING])
+    ids = list(evidence)
+    schema = create_model("Linking", direct=ids_field(ids), context=ids_field(ids))
+
+    def link(k: int, span: tuple[int, int, Mapping[str, Any]]) -> Claim:
+        start, end, _ = span
+        kind = f"{_LINKING}-c{k + 1}"
+        user_message = _LINKING_MESSAGE.render(
+            question=question, answer=answer, claim=answer[start:end], quotes=evidence
+        )
+        linked = send(
+            system_prompt,
+            user_message,
+            schema,
+            kind=kind,
+            rewrite=_LINK_AGAIN,
+            warning=f"claims: claim {k + 1} keeps no quotes, as its linking",
+        )
+        direct = linked["direct"] if linked is not None else []
+        return _supported(answer, start, end, direct, evidence, kind)
+
+    return parallel_map(link, placed, max_workers=workers)
+
+
+def _reply(
+    system_prompt: str,
+    user_message: str,
+    schema: type[BaseModel],
+    *,
+    kind: str,
+    rewrite: str,
+    warning: str,
+    splits: Splits,
+    **llm_call: Any,
+) -> dict[str, Any] | None:
+    """The reply to ``user_message`` beside ``system_prompt``
+    (:func:`~r3con.runtime.llm.send_until_valid`), as a dict; or ``None`` when the
+    request is over ``splits``' line, or its call fails or is cancelled, each logged as
+    a warning that starts with ``warning``."""
     schema_json = json.dumps(schema_as_sent(schema))
     if estimate := splits.over_line(system_prompt, user_message, schema_json):
         _log.warning(
-            "claims: none, as their request would take about %s tokens, over the "
-            "%s-token line",
+            "%s request would take about %s tokens, over the %s-token line",
+            warning,
             f"{estimate:,}",
             f"{splits.line:,}",
         )
-        return []
+        return None
     try:
         reply = send_until_valid(
             system_prompt,
             user_message,
             schema=schema,
-            rewrite=_REWRITE,
-            kind=_KIND,
-            max_attempts=max_attempts,
-            model=model,
-            run=run,
-            **llm_kwargs,
+            rewrite=rewrite,
+            kind=kind,
+            **llm_call,
         )
     # A cancel included: once reasoning has answered, the run finishes with it.
     except Exception as error:  # noqa: BLE001
-        _log.warning("claims: none, as their call failed: %s", error_line(error))
-        return []
-    found = cast(BaseModel, reply).model_dump()["claims"]
-    return _claims(found, answer, evidence, level.ids_key)
+        _log.warning("%s call failed: %s", warning, error_line(error))
+        return None
+    return cast(BaseModel, reply).model_dump()
 
 
 def _quotes(
@@ -143,6 +216,7 @@ def _quotes(
         f"q{n}": _Piece(
             _quote_text(quote),
             quote["document"],
+            quote["name"],
             QuotePlace(
                 document=quote["document"], start=quote["start"], end=quote["end"]
             ),
@@ -165,9 +239,9 @@ def _summaries(
     index = {id_: doc for doc, id_ in enumerate(document_ids)}
     pieces: dict[str, _Piece] = {}
     for document in trail["documents"]:
-        id_ = document["document"]
+        id_, name = document["document"], document["name"]
         notes = _shown_summaries(relevance.records, index[id_])
-        pieces |= {part: _Piece(note, id_, None) for part, note in notes.items()}
+        pieces |= {part: _Piece(note, id_, name, None) for part, note in notes.items()}
     return pieces
 
 
@@ -182,35 +256,43 @@ def _shown_summaries(
     return {}
 
 
+def _claim_texts(_ids: Sequence[str]) -> type[BaseModel]:
+    """A claims reply that lists the claims' texts alone."""
+    return create_model("Claims", claims=lenient_list(str))
+
+
+def _claims_with_documents(ids: Sequence[str]) -> type[BaseModel]:
+    """A claims reply that lists each claim's text with the ids of ``ids`` it cites."""
+    claim = create_model("Claim", text=(str, ...), document_ids=ids_field(ids))
+    return create_model("Claims", claims=lenient_list(claim))
+
+
 _LEVELS: dict[EvidenceLevel, _Level] = {
-    "sentence": _Level(_quotes, "quotes", "Quote ID", "quote_ids"),
-    "document": _Level(_summaries, "summaries", "Document ID", "document_ids"),
+    "sentence": _Level(_quotes, "quotes", "Quote ID", _claim_texts),
+    "document": _Level(_summaries, "summaries", "Document ID", _claims_with_documents),
 }
 
 
-def _claims(
-    found: Sequence[Mapping[str, Any]],
+def _supported(
     answer: str,
-    evidence: dict[str, _Piece],
-    ids_key: str,
-) -> list[Claim]:
-    """The reply's claims placed in ``answer``, each with the evidence it cites."""
-    order = {id_: n for n, id_ in enumerate(evidence)}
-    shown = frozenset(order)
-    claims: list[Claim] = []
-    for start, end, claim in _placed(found, answer):
-        ids = sorted(cited(claim[ids_key], shown, _KIND), key=order.__getitem__)
-        pieces = [evidence[id_] for id_ in ids]
-        claims.append(
-            Claim(
-                text=answer[start:end],
-                start=start,
-                end=end,
-                documents=list(dict.fromkeys(piece.document for piece in pieces)),
-                quotes=[piece.quote for piece in pieces if piece.quote is not None],
-            )
-        )
-    return claims
+    start: int,
+    end: int,
+    ids: Sequence[str],
+    evidence: Mapping[str, _Piece],
+    kind: str,
+) -> Claim:
+    """The claim ``answer`` makes from ``start`` to ``end``, with the evidence of
+    ``ids`` in the order it was shown, less the ids it was not shown, which
+    :func:`~r3con.stages.citing.cited` drops, warning as ``kind``."""
+    kept = frozenset(cited(ids, evidence, kind))
+    pieces = [piece for id_, piece in evidence.items() if id_ in kept]
+    return Claim(
+        text=answer[start:end],
+        start=start,
+        end=end,
+        documents=list(dict.fromkeys(piece.document for piece in pieces)),
+        quotes=[piece.quote for piece in pieces if piece.quote is not None],
+    )
 
 
 def _placed(

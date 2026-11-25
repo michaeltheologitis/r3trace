@@ -248,9 +248,9 @@ print(quote["document_text"])  # Ardent missed 8 delivery windows, mostly in Aug
 With `evidence_level="document"`, `quotes` is empty.
 
 `result.provenance["claims"]` splits the answer into its claims (each
-sentence, clause, list item or table row) and links each one to the evidence
-that supports it. Each claim has its `text`, from its `start` to its `end`
-character in `result.answer`, the `documents` behind it by ID, and the
+sentence, clause, list item or table row), then links each one to the quotes
+that directly support it. Each claim has its `text`, from its `start` to its
+`end` character in `result.answer`, the `documents` behind it by ID, and the
 `quotes` behind it, each by its `document`, `start` and `end`, as in the
 relevant trail's `quotes`:
 
@@ -259,9 +259,10 @@ for claim in result.provenance["claims"]:
     print(claim["text"], claim["documents"])
 ```
 
-Finding the claims takes one more call to the AI model, after the answer. With
-`evidence_level="document"`, a claim lists only its documents. To skip the
-call, pass `claims=False`.
+Finding the claims takes one more call to the AI model, after the answer, and
+linking them one call per claim, made in parallel. With
+`evidence_level="document"`, the one call does both, and a claim lists only its
+documents. To skip these calls, pass `claims=False`.
 
 `result.provenance["evidence_trail"]` is the part of the relevant trail the
 claims rest on: the `documents` and `quotes` they cite, in the same form. When
