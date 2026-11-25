@@ -11,7 +11,7 @@ CODING = "reasoning/coding"
 KEY = "not-a-real-key-q7RkT2mXv9LpA4sW"
 FULL = {
     "model": "openai/gpt-6-luna",
-    "relevance_rounds": 3,
+    "summary_rounds": 3,
     "prompts": PROMPTS,
 }
 V1_PIPELINE = "prompts=(rel1=v1,rel2=v1,schema=v1,parse=v1,direct=v1,coding=v1"
@@ -57,7 +57,7 @@ def test_the_default_config_loads_with_its_shipped_values():
     assert config.name == "default"
     assert config.model == "openai/gpt-6-luna"
     assert (
-        config.relevance_rounds,
+        config.summary_rounds,
         config.reasoning,
         config.evidence_level,
         config.claims,
@@ -74,8 +74,8 @@ def test_the_default_config_loads_with_its_shipped_values():
     ("overrides", "recorded", "label"),
     [
         (
-            {"relevance_rounds": 3, "model": "openai/gpt-x"},
-            {"relevance_rounds": 3, "model": "openai/gpt-x"},
+            {"summary_rounds": 3, "model": "openai/gpt-x"},
+            {"summary_rounds": 3, "model": "openai/gpt-x"},
             "default[model=gpt-x,rounds=3,",
         ),
         (
@@ -89,8 +89,8 @@ def test_the_default_config_loads_with_its_shipped_values():
             "default[model=gpt-6-luna,rounds=2,reasoning=coding,",
         ),
         (
-            {"relevance_rounds": 0},
-            {"relevance_rounds": 0},
+            {"summary_rounds": 0},
+            {"summary_rounds": 0},
             "default[model=gpt-6-luna,rounds=0,",
         ),
         (
@@ -106,7 +106,7 @@ def test_the_default_config_loads_with_its_shipped_values():
         (
             {
                 "model": None,
-                "relevance_rounds": None,
+                "summary_rounds": None,
                 "reasoning": None,
                 "evidence_level": None,
                 "claims": None,
@@ -138,7 +138,7 @@ def test_the_label_is_every_axis_of_the_resolved_identity(configs, tmp_path):
     assert load_config("exp").label() == (
         f"exp[model=gpt-6-luna,rounds=3,reasoning=direct,{V1_PROMPTS}]"
     )
-    assert load_config("exp", relevance_rounds=5).label() == (
+    assert load_config("exp", summary_rounds=5).label() == (
         f"exp[model=gpt-6-luna,rounds=5,reasoning=direct,{V1_PROMPTS}]"
     )
     assert load_config("exp", params={"seed": 7}).label() == (
@@ -322,9 +322,9 @@ def test_a_run_config_refuses_a_stage_r3con_does_not_have():
 
 NOT_AN_INTEGER = "Input should be a valid integer"
 BAD_SETTINGS = [
-    ("relevance_rounds", "3", NOT_AN_INTEGER),
-    ("relevance_rounds", True, NOT_AN_INTEGER),
-    ("relevance_rounds", -1, "Input should be greater than or equal to 0"),
+    ("summary_rounds", "3", NOT_AN_INTEGER),
+    ("summary_rounds", True, NOT_AN_INTEGER),
+    ("summary_rounds", -1, "Input should be greater than or equal to 0"),
     ("reasoning", "Direct", "Input should be 'direct' or 'coding'"),
     ("evidence_level", "paragraph", "Input should be 'sentence' or 'document'"),
     (
@@ -375,9 +375,9 @@ def test_refused_params_are_named_by_their_type_not_their_value(
 def test_every_refused_setting_is_named_in_one_line_with_where_it_was_set(configs):
     configs(bad={**FULL, "reasoning": "agent"})
     with pytest.raises(ValueError) as refused:
-        load_config("bad", relevance_rounds=-1)
+        load_config("bad", summary_rounds=-1)
     assert str(refused.value) == (
-        "override: `relevance_rounds=-1`: Input should be greater than or equal to 0; "
+        "override: `summary_rounds=-1`: Input should be greater than or equal to 0; "
         "config 'bad': `reasoning='agent'`: Input should be 'direct' or 'coding'."
     )
 
@@ -402,7 +402,7 @@ def test_a_run_config_refuses_a_reasoning_path_r3con_does_not_have():
         RunConfig(model="openai/m", prompts=PROMPTS, reasoning="agent")
 
 
-@pytest.mark.parametrize(("name", "value"), [("relevence_rounds", 3), ("seed", 7)])
+@pytest.mark.parametrize(("name", "value"), [("sumary_rounds", 3), ("seed", 7)])
 def test_a_misspelt_override_is_refused(name, value):
     with pytest.raises(TypeError, match=f"unexpected keyword argument '{name}'"):
         load_config("default", **{name: value})
@@ -415,7 +415,7 @@ def test_a_misspelt_override_is_refused(name, value):
             {"seed": 42},
             r"\['seed'\].*`seed` was removed in r3con 0\.2\.0.*params: \{seed: 42\}",
         ),
-        ({"relevence_rounds": 3}, r"does not read: \['relevence_rounds'\]"),
+        ({"sumary_rounds": 3}, r"does not read: \['sumary_rounds'\]"),
         ({"overrides": {"model": "x"}}, r"does not read: \['overrides'\]"),
         ({"name": "other"}, r"does not read: \['name'\]"),
     ],
@@ -428,8 +428,8 @@ def test_a_config_field_r3con_does_not_read_is_refused(configs, field, message):
 
 
 def test_a_run_config_refuses_a_field_it_does_not_have():
-    with pytest.raises(ValidationError, match="relevence_rounds"):
-        RunConfig(model="openai/m", prompts=PROMPTS, relevence_rounds=3)
+    with pytest.raises(ValidationError, match="sumary_rounds"):
+        RunConfig(model="openai/m", prompts=PROMPTS, sumary_rounds=3)
 
 
 def test_a_config_pinning_a_prompt_that_does_not_exist_is_refused_on_load(

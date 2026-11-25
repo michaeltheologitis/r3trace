@@ -1,6 +1,6 @@
 """The run config: every knob that shapes the OUTPUT, in one place.
 
-A :class:`RunConfig` is the **identity of a run** — the model, number of relevance
+A :class:`RunConfig` is the **identity of a run** — the model, number of summary
 rounds, the reasoning path, the evidence level, whether it finds the answer's claims,
 the prompt version of each stage, and any generation params.
 It is loaded from a bundled ``configs/<name>.yaml`` (with optional overrides) and flows
@@ -23,7 +23,7 @@ package data, resolved from the package directory.
 Config file shape (``configs/<name>.yaml``)::
 
     model: openai/gpt-6-luna
-    relevance_rounds: 2
+    summary_rounds: 2
     reasoning: direct            # or coding
     evidence_level: sentence     # or document
     claims: true                 # or false; left out, whether a claims prompt is pinned
@@ -86,7 +86,7 @@ _LEVELLED_STAGES: tuple[PromptStage, ...] = (
 _CONFIG_FIELDS = frozenset(
     {
         "model",
-        "relevance_rounds",
+        "summary_rounds",
         "reasoning",
         "evidence_level",
         "claims",
@@ -134,7 +134,7 @@ class RunConfig(BaseModel):
     name: str = DEFAULT_CONFIG
     model: Annotated[str, Field(min_length=1)]
     # keep in sync with configs/default.yaml (the shipped default); 0 skips relevance
-    relevance_rounds: Annotated[int, Field(ge=0, strict=True)] = 2
+    summary_rounds: Annotated[int, Field(ge=0, strict=True)] = 2
     # keep in sync with configs/default.yaml
     reasoning: ReasoningPath = "direct"
     # keep in sync with configs/default.yaml
@@ -174,7 +174,7 @@ class RunConfig(BaseModel):
         order, each a ``key=value`` string. **This is the one place to extend the
         identity** — add a line here and the new axis becomes part of a run's identity.
         Values are the *resolved* config (not how they were set), so 3 rounds read the
-        same whether they came from the config file or ``--relevance-rounds 3``. The
+        same whether they came from the config file or ``--summary-rounds 3``. The
         model is reduced to its bare name (the provider/route prefix is transport — see
         :func:`normalize_model_name`)."""
         prompts = ",".join(
@@ -184,7 +184,7 @@ class RunConfig(BaseModel):
         )
         parts = [
             f"model={normalize_model_name(self.model)}",
-            f"rounds={self.relevance_rounds}",
+            f"rounds={self.summary_rounds}",
             f"reasoning={self.reasoning}",
         ]
         # Only when not the default, so a sentence-level run's label is as it was.
@@ -271,7 +271,7 @@ def load_config(
     name: str = DEFAULT_CONFIG,
     *,
     model: str | None = None,
-    relevance_rounds: int | None = None,
+    summary_rounds: int | None = None,
     reasoning: ReasoningPath | None = None,
     evidence_level: EvidenceLevel | None = None,
     claims: bool | None = None,
@@ -308,7 +308,7 @@ def load_config(
         fields,
         name,
         model=model,
-        relevance_rounds=relevance_rounds,
+        summary_rounds=summary_rounds,
         reasoning=reasoning,
         evidence_level=evidence_level,
         claims=claims,
@@ -323,7 +323,7 @@ def configure(
     name: str,
     *,
     model: str | None = None,
-    relevance_rounds: int | None = None,
+    summary_rounds: int | None = None,
     reasoning: ReasoningPath | None = None,
     evidence_level: EvidenceLevel | None = None,
     claims: bool | None = None,
@@ -339,7 +339,7 @@ def configure(
     """
     overrides = {
         "model": model,
-        "relevance_rounds": relevance_rounds,
+        "summary_rounds": summary_rounds,
         "reasoning": reasoning,
         "evidence_level": evidence_level,
         "claims": claims,

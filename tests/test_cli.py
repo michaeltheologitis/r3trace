@@ -114,7 +114,7 @@ def scripted(llm, monkeypatch):
 
 
 def test_a_run_prints_the_answer_alone_on_stdout(answering, capsys):
-    assert r3con("run", "Who?", str(MEMOS), "--relevance-rounds", "1") == 0
+    assert r3con("run", "Who?", str(MEMOS), "--summary-rounds", "1") == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     assert "5 document(s) · default[model=gpt-6-luna,rounds=1," in err
@@ -152,7 +152,7 @@ def test_a_run_that_skipped_nothing_says_nothing_of_skips(answering, capsys):
 
 
 def test_the_flags_override_the_config_and_show_in_the_label(answering, capsys):
-    argv = ["--model", QWEN, "--relevance-rounds", "1", "--reasoning", "coding"]
+    argv = ["--model", QWEN, "--summary-rounds", "1", "--reasoning", "coding"]
     assert r3con("run", "Who?", str(MEMOS), *argv) == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
@@ -163,7 +163,7 @@ def test_the_flags_override_the_config_and_show_in_the_label(answering, capsys):
 
 
 def test_the_evidence_level_flag_reaches_the_config_and_the_label(answering, capsys):
-    argv = ["--relevance-rounds", "1", "--evidence-level", "document"]
+    argv = ["--summary-rounds", "1", "--evidence-level", "document"]
     assert r3con("run", "Who?", str(MEMOS), *argv) == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
@@ -178,7 +178,7 @@ def test_the_evidence_level_flag_reaches_the_config_and_the_label(answering, cap
 
 def finished_run(capsys) -> Path:
     """The folder of a finished ``r3con run`` over the memos."""
-    assert r3con("run", "Who?", str(MEMOS), "--relevance-rounds", "1") == 0
+    assert r3con("run", "Who?", str(MEMOS), "--summary-rounds", "1") == 0
     return path_after("artifacts: ", capsys.readouterr().err)
 
 
@@ -417,7 +417,7 @@ def test_an_interrupt_exits_130_and_says_how_to_carry_on(scripted, capsys):
 
 
 def test_no_artifacts_writes_no_run_folder(answering, tmp_path, capsys):
-    argv = ["--relevance-rounds", "1", "--no-artifacts"]
+    argv = ["--summary-rounds", "1", "--no-artifacts"]
     assert r3con("run", "Who?", str(MEMOS), *argv) == 0
     assert "artifacts:" not in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
@@ -425,7 +425,7 @@ def test_no_artifacts_writes_no_run_folder(answering, tmp_path, capsys):
 
 def test_logs_dir_chooses_where_the_run_folder_goes(answering, tmp_path, capsys):
     out = tmp_path / "out"
-    argv = ["--relevance-rounds", "1", "--logs-dir", str(out)]
+    argv = ["--summary-rounds", "1", "--logs-dir", str(out)]
     assert r3con("run", "Who?", str(MEMOS), *argv) == 0
     run_dir = path_after("artifacts: ", capsys.readouterr().err)
     assert run_dir.parent == out
@@ -439,7 +439,7 @@ def test_doc_workers_bounds_how_many_documents_are_read_at_once(answering, worke
         return "a note"
 
     answering.answers(relevance=slow_note)
-    argv = ["--relevance-rounds", "1", "--doc-workers", str(workers)]
+    argv = ["--summary-rounds", "1", "--doc-workers", str(workers)]
     assert r3con("run", "Who?", str(MEMOS), *argv) == 0
     assert answering.peak_in_flight == workers
 
@@ -496,7 +496,7 @@ def test_a_cap_that_is_not_an_integer_exits_2_without_a_traceback(
 
 
 def test_verbose_streams_stage_progress_to_stderr(answering, capsys):
-    assert r3con("run", "Who?", str(MEMOS), "--relevance-rounds", "1", "-v") == 0
+    assert r3con("run", "Who?", str(MEMOS), "--summary-rounds", "1", "-v") == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     assert "stage 1/3" in err

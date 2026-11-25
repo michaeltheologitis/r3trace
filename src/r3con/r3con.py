@@ -91,7 +91,7 @@ def run(
     *,
     model: str | None = None,
     config: str | RunConfig = DEFAULT_CONFIG,
-    relevance_rounds: int | None = None,
+    summary_rounds: int | None = None,
     reasoning: ReasoningPath | None = None,
     evidence_level: EvidenceLevel | None = None,
     claims: bool | None = None,
@@ -121,7 +121,7 @@ def run(
             ``"anthropic/claude-sonnet-5-5"``, ``"hosted_vllm/Qwen/Qwen3.5-35B-A3B"``).
             Defaults to the config's.
         config: a bundled config name, or a :class:`RunConfig` you built yourself.
-        relevance_rounds: overrides the config's.
+        summary_rounds: overrides the config's.
         reasoning: overrides the config's reasoning path: ``"direct"``, one completion
             over the relevant context and the whole parse, or ``"coding"``, an agent
             that reads the parse with code. A direct run takes the coding path when its
@@ -223,7 +223,7 @@ def run(
 
     overrides = {
         "model": model,
-        "relevance_rounds": relevance_rounds,
+        "summary_rounds": summary_rounds,
         "reasoning": reasoning,
         "evidence_level": evidence_level,
         "claims": claims,

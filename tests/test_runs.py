@@ -669,7 +669,7 @@ def test_a_model_is_recorded_without_its_provider_prefix(model, name):
 
 
 def test_the_manifest_records_the_identity_and_the_installed_version(logger):
-    run_config = config(model="hosted_vllm/Some/Model-X", relevance_rounds=3)
+    run_config = config(model="hosted_vllm/Some/Model-X", summary_rounds=3)
     write_manifest(
         logger, task="what happened?", config=run_config, n_docs=3, context_chars=1234
     )
@@ -682,7 +682,7 @@ def test_the_manifest_records_the_identity_and_the_installed_version(logger):
     assert manifest["run_folder"] == "run"
     assert manifest["config"]["model"] == "Model-X"
     recorded = manifest["config"]
-    assert recorded["relevance_rounds"] == 3
+    assert recorded["summary_rounds"] == 3
     assert "seed" not in recorded
     assert recorded["prompts"] == dict.fromkeys(PROMPT_STAGES, "v1")
     assert manifest["settings"]["reasoning_max_turns"] == settings.REASONING_MAX_TURNS

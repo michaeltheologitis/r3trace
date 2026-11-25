@@ -525,7 +525,7 @@ def test_a_run_folder_without_names_can_be_asked_and_names_documents_by_index(
 def test_an_ask_answers_over_the_runs_representation_citing_only_its_ids(
     answering_llm, tmp_path, rounds
 ):
-    result = finished_run(answering_llm, tmp_path, relevance_rounds=rounds)
+    result = finished_run(answering_llm, tmp_path, summary_rounds=rounds)
     asked = ask(result, "Who else?", completion=answering_llm)
     assert asked.answer == JOINED
     cited = cited_documents(asked.provenance)
@@ -751,7 +751,7 @@ def test_a_run_with_a_document_in_parts_is_asked_through_each_of_its_rounds(
     model = window(5_000)
     documents = ["Halloran memo", grown_registry(40_000), "Merrow memo"]
     result = finished_run(
-        answering_llm, tmp_path, documents, model=model, relevance_rounds=rounds
+        answering_llm, tmp_path, documents, model=model, summary_rounds=rounds
     )
     asked = ask(result, "Who else?", model=model, completion=answering_llm)
     assert asked.answer == "Halloran memo"
@@ -2142,12 +2142,10 @@ def test_a_resume_prunes_what_the_run_pruned_and_never_reads_or_parses_it(
     answering_llm, one_worker, tmp_path, rounds, dunmore_late, stage, when, resent
 ):
     llm = answering_llm.answers(relevance=silent_when(dunmore_late()))
-    whole = finished_run(
-        llm, tmp_path / "whole", MEMOS_BY_NAME, relevance_rounds=rounds
-    )
+    whole = finished_run(llm, tmp_path / "whole", MEMOS_BY_NAME, summary_rounds=rounds)
     replies = {**ANSWERING, "relevance": silent_when(dunmore_late())}
     llm.answers(**{**replies, stage: failing_once(when(), replies[stage])})
-    run_dir = failed_run(llm, tmp_path / "failed", relevance_rounds=rounds)
+    run_dir = failed_run(llm, tmp_path / "failed", summary_rounds=rounds)
     answer, requests = resumed(llm, run_dir)
     assert requests == resent
     assert as_named(answer) == as_named(whole)
@@ -2164,7 +2162,7 @@ def test_a_run_whose_pruning_goes_unread_resumes_parsing_every_document(
         relevance=silent_when(reading_in_round("Dunmore memo", 2)),
         parsing=failing_once(reading("Calder memo"), ANSWERING["parsing"]),
     )
-    run_dir = failed_run(llm, tmp_path, relevance_rounds=3)
+    run_dir = failed_run(llm, tmp_path, summary_rounds=3)
     left_by(run_dir, events_in(run_dir))
     answer, requests = resumed(llm, run_dir)
     assert requests == [
@@ -2185,7 +2183,7 @@ def test_a_run_whose_pruning_goes_unread_stopped_in_round_3_resumes_pruning_noth
         silent_when(reading_in_round("Dunmore memo", 2)),
     )
     llm = answering_llm.answers(relevance=failing)
-    run_dir = failed_run(llm, tmp_path, relevance_rounds=3)
+    run_dir = failed_run(llm, tmp_path, summary_rounds=3)
     left_by(run_dir, events_in(run_dir))
     seen = []
     answer, requests = resumed(llm, run_dir, on_event=seen.append)
@@ -2208,7 +2206,7 @@ def test_a_resume_replays_each_rounds_pruning_once_before_the_round_after_it(
     llm = answering_llm.answers(
         relevance=failing_once(reading_in_round("Calder memo", 4), silent)
     )
-    run_dir = failed_run(llm, tmp_path, relevance_rounds=4)
+    run_dir = failed_run(llm, tmp_path, summary_rounds=4)
     seen = []
     resume(run_dir, MEMOS_BY_NAME, completion=llm, on_event=seen.append)
     steps = [(e["type"], e.get("round")) for e in seen]
@@ -2229,7 +2227,7 @@ def test_a_finished_relevances_pruning_is_replayed_from_its_result_round_by_roun
         relevance=silent_when(lambda r: DUNMORE_LATE(r) or easton_late(r)),
         parsing=failing_once(reading("Calder memo"), ANSWERING["parsing"]),
     )
-    run_dir = failed_run(llm, tmp_path, relevance_rounds=4)
+    run_dir = failed_run(llm, tmp_path, summary_rounds=4)
     events = events_in(run_dir)
     ids = events[0]["document_ids"]
     lines = [json.dumps(event) for event in events]

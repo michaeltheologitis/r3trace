@@ -2407,9 +2407,9 @@
   const ARIA_KIND = { doc: 'document', parsed: 'parsed structure', schema: 'proposed schema' };
   const SCHEMA_LABEL = 'schema';
   const STAGE_PHASE = { schema: 'proposing a schema', parsed: 'parsing', answer: 'reasoning' };
-  // The relevance rounds r3con's default config runs, and a run's until another count is chosen in the settings.
+  // The summary rounds r3con's default config runs, and a run's until another count is chosen in the settings.
   const DEFAULT_ROUNDS = 2;
-  // The most r3con app takes, its MAX_RELEVANCE_ROUNDS.
+  // The most r3con app takes, its MAX_SUMMARY_ROUNDS.
   const MAX_ROUNDS = 4;
   // The evidence level r3con's default config records, and a run's until the other is chosen in the settings.
   const DEFAULT_EVIDENCE = 'sentence';
@@ -6412,7 +6412,7 @@
   /** @param {RunTab} tab @param {Narrator} narr */
   async function streamRun(tab, narr) {
     const { question, model, endpoint } = tab.run.answers[0];
-    const body = { question, model, endpoint, ...documentsOf(tab.run), relevance_rounds: tab.run.rounds.length, evidence_level: tab.run.evidence };
+    const body = { question, model, endpoint, ...documentsOf(tab.run), summary_rounds: tab.run.rounds.length, evidence_level: tab.run.evidence };
     await playLive(tab, narr, '/api/runs', body, 'failed');
   }
 

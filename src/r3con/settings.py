@@ -2,7 +2,7 @@
 
 Everything here is RUNTIME only — parallelism, retry caps, timeouts, where files live.
 None of it changes a correct answer. Everything that shapes the OUTPUT (model,
-relevance rounds, prompt versions, generation params) lives in a
+summary rounds, prompt versions, generation params) lives in a
 :class:`r3con.config.RunConfig`, not here.
 
 Each knob is a module constant, read when the call that uses it runs, so setting

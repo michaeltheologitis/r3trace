@@ -3,7 +3,7 @@
 Wires the three moves of the method — see :mod:`r3con.stages`:
 
 1. **surfacing relevance** (:mod:`r3con.stages.relevance`) — each document gets a
-   task-conditioned **relevance summary**, rebuilt over ``relevance_rounds`` synchronous
+   task-conditioned **relevance summary**, rebuilt over ``summary_rounds`` synchronous
    rounds; from round 2 on, each document is re-read in light of the *other* documents'
    previous summaries, but those it prunes
    (:attr:`~r3con.stages.relevance.RelevantContext.pruned`). The collection of them is
@@ -558,7 +558,7 @@ def run_pipeline(
     takes them and :func:`names_and_texts` checks them, before anything else.
 
     ``config`` (a :class:`r3con.config.RunConfig`) carries everything that shapes the
-    output — model, relevance rounds, the reasoning path, the evidence level, the
+    output — model, summary rounds, the reasoning path, the evidence level, the
     prompt version of each stage, and any generation params — so nothing
     output-affecting is threaded ad-hoc.
 
@@ -738,7 +738,7 @@ def _build_and_answer(
     ``on_event`` again, take each finished stage's results as they are and compute only
     what the others lack (:func:`resume_pipeline`)."""
     model = config.model
-    rounds = config.relevance_rounds
+    rounds = config.summary_rounds
     document_ids = list(names)
     run_dir = task_logger.dir if task_logger is not None else None
     emit(
@@ -1107,7 +1107,7 @@ def resume_pipeline(
         document_ids = list(resumable.names)
         with _readable(run_dir):
             saved = _read_saved(
-                run_dir, document_ids, resumable.texts, config.relevance_rounds, splits
+                run_dir, document_ids, resumable.texts, config.summary_rounds, splits
             )
         task_logger = TaskLogger(run_dir.name, root=run_dir.parent)
         reopen_for_resume(task_logger, resumable.caps)

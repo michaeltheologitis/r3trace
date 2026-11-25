@@ -141,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--config",
         choices=available_configs() or None,
         default="default",
-        help="Run config: model, relevance rounds, reasoning path, evidence level, "
+        help="Run config: model, summary rounds, reasoning path, evidence level, "
         "claims, prompt versions, generation params.",
     )
     run_cmd.add_argument(
@@ -150,11 +150,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Override the config's model, e.g. openai/gpt-6-luna.",
     )
     run_cmd.add_argument(
-        "--relevance-rounds",
+        "--summary-rounds",
         type=int,
         default=None,
         metavar="N",
-        help="Override how many rounds of relevance surfacing to run "
+        help="Override how many summary rounds to run "
         "(0 = skip relevance; 1 = each document read alone; 2+ = re-read in light of "
         "the others).",
     )
@@ -263,7 +263,7 @@ def _run(args: argparse.Namespace) -> int:
         config = load_config(
             args.config,
             model=args.model,
-            relevance_rounds=args.relevance_rounds,
+            summary_rounds=args.summary_rounds,
             reasoning=args.reasoning,
             evidence_level=args.evidence_level,
         )
