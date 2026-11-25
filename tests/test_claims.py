@@ -5,8 +5,9 @@ import threading
 from pathlib import Path
 
 import pytest
+import yaml
 
-from r3con import Answer, Cancelled, ask, resume, run, trace
+from r3con import Answer, Cancelled, ask, resume, run, settings, trace
 from r3con.config import EVIDENCE_LEVELS
 from r3con.provenance import RULES
 from tests.fakes import (
@@ -19,6 +20,8 @@ from tests.fakes import (
     first_line,
     in_json,
     is_later_round,
+    linked_claim,
+    linking_reply,
     quoting_a_line_a_round,
     shown_evidence,
     stage_of,
@@ -29,9 +32,10 @@ QUESTION = "Who?"
 HALLORAN = "The Halloran memo logs two sites."
 MERROW = "The Merrow memo logs two sites."
 ANSWER = f"{HALLORAN} {MERROW}"
-SENTENCE_SYSTEM = """You will be given a question and an answer that is supported by a collection of quotes. Your job is to extract the exact claims made in the answer, word for word (each sentence, clause, list item or table row; split a sentence that makes several claims into its parts, each word for word), along with the IDs of every quote that supports them or any part of them.
-Return exactly one JSON object with the key `claims`, where each item has `text` and `quote_ids`. Output only that JSON.
-Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Base quote_ids only on the provided quotes: cite every quote that supports the claim or any part of it, and use an empty array only when no quote supports any part of it. Do not guess or infer unsupported quote IDs.
+CALDER = "The Calder memo logs two sites."
+SENTENCE_SYSTEM = """You will be given a question and an answer that is supported by a collection of quotes. Your job is to extract the exact claims made in the answer, word for word (each sentence, clause, list item or table row; split a sentence that makes several claims into its parts, each word for word), so that each claim can be checked against the quotes on its own.
+Return exactly one JSON object with the key `claims`, a list of the claims' texts. Output only that JSON.
+Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Do not list quote IDs.
 ## Example
 <question>
 Which bakery sold more loaves in March, and by how much?
@@ -49,7 +53,7 @@ Loaves sold in March: 980.
 ### Quote ID: q4
 The shop is open seven days a week.
 </quotes>
-Reply: {"claims": [{"text": "Rye & Co. sold more loaves in March: 1,240 against Hearth's 980, a difference of 260.", "quote_ids": ["q1", "q3"]}, {"text": "Neither report gives prices.", "quote_ids": []}]}"""
+Reply: {"claims": ["Rye & Co. sold more loaves in March: 1,240 against Hearth's 980, a difference of 260.", "Neither report gives prices."]}"""
 DOCUMENT_SYSTEM = """You will be given a question and an answer that is supported by a collection of document summaries. Your job is to extract the exact claims made in the answer, word for word (each sentence, clause, list item or table row; split a sentence that makes several claims into its parts, each word for word), along with the IDs of every document whose summary supports them or any part of them.
 Return exactly one JSON object with the key `claims`, where each item has `text` and `document_ids`. Output only that JSON.
 Preserve the original wording of each claim exactly as it appears in the answer. Include every claim from the answer once, in the same order it appears. Base document_ids only on the provided summaries: cite every document whose summary supports the claim or any part of it, and use an empty array only when no summary supports any part of it. Do not guess or infer unsupported document IDs.
@@ -72,6 +76,11 @@ Site C's safety summary: one adverse event, a case of nausea, resolved the same 
 </summaries>
 Reply: {"claims": [{"text": "Site A: two mild headaches.", "document_ids": ["3f9a"]}, {"text": "Site C: one case of nausea.", "document_ids": ["b604"]}, {"text": "Site B reported none.", "document_ids": ["7c21"]}]}"""
 SYSTEMS = {"sentence": SENTENCE_SYSTEM, "document": DOCUMENT_SYSTEM}
+LINKING_SYSTEM = """You will be given a question, an answer to it, one claim taken from that answer, and numbered quotes from source documents. Decide which quotes directly support the claim.
+
+A quote directly supports the claim when it states a fact the claim asserts (a name, number, date, event, or relation in the claim), on its own or together with other quotes you select. A quote that is only on the same topic, gives background, or supports a different part of the answer does not directly support this claim. If the claim only frames the answer (for example "Yes." or a summary of other claims), select the quotes that state the facts it relies on, if any.
+
+Return exactly one JSON object with the keys `direct` and `context`: `direct` lists the IDs of the quotes that directly support the claim; `context` lists the IDs of quotes that are useful background for the claim but do not state what it asserts. Use an empty array when there are none. Output only that JSON."""
 QUESTION_AND_ANSWER = """<question>
 Who?
 </question>
@@ -93,11 +102,34 @@ The Merrow memo logs two sites.
 The Calder memo logs two sites.
 </quotes>"""
 QUOTE_IDS = ["q1", "q2", "q3", "q4", "q5"]
+# The same quotes as a linking request shows them, each with its document's name.
+NAMED_QUOTES = """<quotes>
+### Quote ID: q1
+(from: q3/halloran.txt)
+Halloran memo
+### Quote ID: q2
+(from: q3/halloran.txt)
+The Halloran memo logs two sites.
+### Quote ID: q3
+(from: q3/merrow.txt)
+Merrow memo
+### Quote ID: q4
+(from: q3/merrow.txt)
+The Merrow memo logs two sites.
+### Quote ID: q5
+(from: calder.pdf)
+The Calder memo logs two sites.
+</quotes>"""
 CANCELLED = "Cancelled: cancel was set, so no further model call is sent"
+CLAIM_KEYS = ("text", "start", "end", "documents", "quotes")
 # An answer long enough that the claims request is over a window of WINDOW_TOKENS,
 # which every other request of a run over TWO_LINE_MEMOS fits.
 LONG_ANSWER = " ".join([HALLORAN] * 1_000)
 WINDOW_TOKENS = 8_192
+# A claim long enough that its linking request, which shows it beside the answer, is
+# over a window of LINKING_WINDOW_TOKENS, which the claims request fits.
+LONG_CLAIM = " ".join([MERROW] * 300)
+LINKING_WINDOW_TOKENS = 4_800
 
 
 @pytest.fixture
@@ -118,9 +150,10 @@ def run_memos(llm, tmp_path: Path, **options) -> Answer:
 
 
 def claimed(llm, tmp_path: Path, *claims, **options) -> Answer:
-    """A run of QUESTION over TWO_LINE_MEMOS whose claims reply is ``claims``, each
-    its text and the ids that support it."""
-    llm.answers(claims=claims_reply(*claims))
+    """A run of QUESTION over TWO_LINE_MEMOS whose claims are ``claims``, each its
+    text and the ids that support it: the claims call splits the answer into them, and
+    each one's linking call links it to its ids."""
+    llm.answers(claims=claims_reply(*claims), linking=linking_reply(dict(claims)))
     return run_memos(llm, tmp_path, **options)
 
 
@@ -139,43 +172,68 @@ def cancelling(cancel: threading.Event, reply):
     return answer
 
 
-def reply_schema(ids_key: str, title: str, ids: list[str]) -> dict:
-    """The strict schema a claims request sends for a reply citing ``ids``."""
-    claim = {
-        "properties": {
-            "text": {"title": "Text", "type": "string"},
-            ids_key: {
-                "items": {"enum": ids, "type": "string"},
-                "title": title,
-                "type": "array",
-            },
-        },
-        "required": ["text", ids_key],
-        "title": "Claim",
-        "type": "object",
-        "additionalProperties": False,
-    }
+def strict(name: str, schema: dict) -> dict:
+    """The response format of a request whose reply fits ``schema``, named ``name``."""
     return {
         "type": "json_schema",
-        "json_schema": {
-            "name": "Claims",
-            "schema": {
-                "$defs": {"Claim": claim},
-                "properties": {
-                    "claims": {
-                        "items": {"$ref": "#/$defs/Claim"},
-                        "title": "Claims",
-                        "type": "array",
-                    }
-                },
-                "title": "Claims",
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["claims"],
-            },
-            "strict": True,
-        },
+        "json_schema": {"name": name, "schema": schema, "strict": True},
     }
+
+
+def strict_object(title: str, properties: dict, **extra) -> dict:
+    """A strict JSON schema of an object of ``properties``, all required."""
+    return {
+        **extra,
+        "properties": properties,
+        "title": title,
+        "type": "object",
+        "additionalProperties": False,
+        "required": list(properties),
+    }
+
+
+def id_list(title: str, ids: list[str]) -> dict:
+    """A field listing some of ``ids``."""
+    return {"items": {"enum": ids, "type": "string"}, "title": title, "type": "array"}
+
+
+CLAIM_TEXTS = strict(
+    "Claims",
+    strict_object(
+        "Claims",
+        {"claims": {"items": {"type": "string"}, "title": "Claims", "type": "array"}},
+    ),
+)
+"""The schema of a sentence-level claims request: the claims' texts alone."""
+
+
+def claims_with_ids(ids: list[str]) -> dict:
+    """The schema of a document-level claims request, citing ``ids``."""
+    claim = strict_object(
+        "Claim",
+        {
+            "text": {"title": "Text", "type": "string"},
+            "document_ids": id_list("Document Ids", ids),
+        },
+    )
+    claims = {"items": {"$ref": "#/$defs/Claim"}, "title": "Claims", "type": "array"}
+    return strict(
+        "Claims",
+        strict_object("Claims", {"claims": claims}, **{"$defs": {"Claim": claim}}),
+    )
+
+
+LINKS = strict(
+    "Linking",
+    strict_object(
+        "Linking",
+        {
+            "direct": id_list("Direct", QUOTE_IDS),
+            "context": id_list("Context", QUOTE_IDS),
+        },
+    ),
+)
+"""The schema of a linking request over QUOTES."""
 
 
 @pytest.mark.parametrize("level", EVIDENCE_LEVELS)
@@ -193,8 +251,8 @@ Notes on Merrow memo.
 Notes on Calder memo.
 </summaries>"""
     evidence, schema = {
-        "sentence": (QUOTES, reply_schema("quote_ids", "Quote Ids", QUOTE_IDS)),
-        "document": (summaries, reply_schema("document_ids", "Document Ids", ids)),
+        "sentence": (QUOTES, CLAIM_TEXTS),
+        "document": (summaries, claims_with_ids(ids)),
     }[level]
     [request] = quoting_llm.requests_for("claims")
     assert request["messages"] == [
@@ -204,13 +262,42 @@ Notes on Calder memo.
     assert request["response_format"] == schema
 
 
-def test_claims_are_asked_of_reasonings_model_with_its_params(quoting_llm, tmp_path):
+def test_a_linking_request_shows_the_question_answer_claim_and_named_quotes(
+    quoting_llm, tmp_path
+):
+    claimed(quoting_llm, tmp_path, (HALLORAN, []), (MERROW, []))
+    requests = quoting_llm.requests_for("linking")
+    [request] = [r for r in requests if linked_claim(r) == MERROW]
+    claim = f"<claim>\n{MERROW}\n</claim>\n"
+    assert request["messages"] == [
+        {"role": "system", "content": LINKING_SYSTEM},
+        {"role": "user", "content": QUESTION_AND_ANSWER + claim + NAMED_QUOTES},
+    ]
+    assert request["response_format"] == LINKS
+    assert sorted(map(linked_claim, requests)) == [HALLORAN, MERROW]
+
+
+def test_a_run_pins_and_records_the_claims_and_linking_prompts(quoting_llm, tmp_path):
+    result = run_memos(quoting_llm, tmp_path)
+    manifest = json.loads((result.run_dir / "manifest.json").read_text())
+    pinned = manifest["config"]["prompts"]
+    assert (pinned["claims"], pinned["linking"]) == ("v3", "v1")
+    read = manifest["sources"]["prompts"]
+    assert read["linking"] == str(settings.PROMPTS_DIR / "linking" / "v1.yaml")
+    assert read["claims"] == str(settings.PROMPTS_DIR / "claims" / "v3.yaml")
+
+
+def test_claims_are_split_and_linked_on_reasonings_model_with_its_params(
+    quoting_llm, tmp_path
+):
     params = {"temperature": 0.3, "seed": 7}
     claimed(quoting_llm, tmp_path, (ANSWER, []), model="openai/gpt-4o", params=params)
     [reasoning] = quoting_llm.requests_for("reasoning")
     [claims] = quoting_llm.requests_for("claims")
-    assert claims["model"] == reasoning["model"] == "openai/gpt-4o"
-    assert (claims["temperature"], claims["seed"]) == (0.3, 7)
+    [linking] = quoting_llm.requests_for("linking")
+    for request in (claims, linking):
+        assert request["model"] == reasoning["model"] == "openai/gpt-4o"
+        assert (request["temperature"], request["seed"]) == (0.3, 7)
 
 
 def test_claims_are_the_answers_own_words_in_its_order_with_what_supports_them(
@@ -240,6 +327,48 @@ def test_claims_are_the_answers_own_words_in_its_order_with_what_supports_them(
     assert saved["evidence_trail"] == result.provenance["evidence_trail"]
 
 
+def test_a_claim_keeps_its_direct_quotes_alone_and_each_call_is_named_for_it(
+    quoting_llm, tmp_path
+):
+    quoting_llm.answers(
+        claims=claims_reply((MERROW, []), (HALLORAN, [])),
+        linking=linking_reply({HALLORAN: ["q2"], MERROW: ["q4"]}, context=["q1", "q3"]),
+    )
+    result = run_memos(quoting_llm, tmp_path)
+    trail = result.provenance["relevant_trail"]
+    quotes = trail["quotes"]
+    claims = result.provenance["claims"]
+    assert [claim["quotes"] for claim in claims] == [
+        [place(quotes[1])],
+        [place(quotes[3])],
+    ]
+    assert result.provenance["evidence_trail"] == evidence(
+        "claims", trail["documents"][:2], [quotes[1], quotes[3]]
+    )
+    saved = json.loads((result.run_dir / "claims" / "result.json").read_text())
+    assert saved["claims"] == claims
+    assert all(set(claim) == set(CLAIM_KEYS) for claim in saved["claims"])
+    calls = json.loads((result.run_dir / "claims" / "calls.json").read_text())
+    replies = {call["kind"]: json.loads(call["output"]) for call in calls}
+    assert replies == {
+        "claims": {"claims": [MERROW, HALLORAN]},
+        "linking-c1": {"direct": ["q2"], "context": ["q1", "q3"]},
+        "linking-c2": {"direct": ["q4"], "context": ["q1", "q3"]},
+    }
+
+
+def test_the_transcript_is_the_split_call_whichever_linking_call_ends_last(
+    quoting_llm, tmp_path
+):
+    result = claimed(quoting_llm, tmp_path, (HALLORAN, ["q2"]), (MERROW, ["q4"]))
+    transcript = yaml.safe_load((result.run_dir / "claims/transcript.yaml").read_text())
+    assert [(m["role"], m["content"]) for m in transcript["messages"]] == [
+        ("system", SENTENCE_SYSTEM),
+        ("user", QUESTION_AND_ANSWER + QUOTES),
+        ("assistant", json.dumps({"claims": [HALLORAN, MERROW]})),
+    ]
+
+
 def test_the_evidence_trail_is_what_the_claims_cite_in_the_answer_folder_and_event(
     quoting_llm, tmp_path, events_in
 ):
@@ -267,6 +396,8 @@ def test_at_the_document_level_the_evidence_trail_is_the_documents_claims_name(
     result = run_memos(quoting_llm, tmp_path, evidence_level="document")
     documents = result.provenance["relevant_trail"]["documents"]
     assert result.provenance["evidence_trail"] == evidence("claims", [documents[1]], [])
+    assert len(quoting_llm.requests_for("claims")) == 1
+    assert quoting_llm.requests_for("linking") == []
 
 
 def test_claims_that_cite_nothing_leave_the_whole_trail_as_the_evidence_trail(
@@ -325,7 +456,7 @@ def test_an_id_the_call_did_not_show_is_dropped_with_a_warning(
     [claim] = result.provenance["claims"]
     assert claim["quotes"] == [place(result.provenance["relevant_trail"]["quotes"][1])]
     assert (
-        "claims: dropped provenance id(s) the call did not show: ['q9', 'a1b2c3']"
+        "linking-c1: dropped provenance id(s) the call did not show: ['q9', 'a1b2c3']"
     ) in caplog.text
 
 
@@ -359,10 +490,13 @@ def test_a_claim_the_answer_does_not_make_is_dropped_with_a_warning(
     ],
     ids=["normalized", "fuzzy"],
 )
-def test_a_claim_altered_slightly_is_found_and_keeps_the_answers_words(
+def test_a_claim_altered_slightly_is_found_and_linked_in_the_answers_words(
     quoting_llm, tmp_path, altered, found
 ):
-    result = claimed(quoting_llm, tmp_path, (altered, ["q4"]))
+    quoting_llm.answers(
+        claims=claims_reply((altered, [])), linking=linking_reply({found: ["q4"]})
+    )
+    result = run_memos(quoting_llm, tmp_path)
     [claim] = result.provenance["claims"]
     assert claim["text"] == found == ANSWER[claim["start"] : claim["end"]]
     assert claim["quotes"] == [place(result.provenance["relevant_trail"]["quotes"][3])]
@@ -383,6 +517,12 @@ def test_an_elided_quote_is_shown_in_the_notes_words_not_the_span_it_skips(
     user = request["messages"][1]["content"]
     assert "### Quote ID: q1\nThe Halloran memo ... two sites.\n" in user
     assert HALLORAN not in user.split("<quotes>", 1)[1]
+    [linking] = answering_llm.requests_for("linking")
+    quotes = linking["messages"][1]["content"].split("<quotes>", 1)[1]
+    assert quotes.startswith(
+        "\n### Quote ID: q1\n(from: q3/halloran.txt)\nThe Halloran memo ... two sites.\n"
+    )
+    assert HALLORAN not in quotes
 
 
 @pytest.mark.parametrize("level", EVIDENCE_LEVELS)
@@ -393,6 +533,7 @@ def test_an_answer_whose_trail_holds_no_evidence_makes_no_claims_call(
     trail = result.provenance["relevant_trail"]
     assert (trail["quotes"], trail["documents"]) == ([], [])
     assert answering_llm.requests_for("claims") == []
+    assert answering_llm.requests_for("linking") == []
     assert result.provenance["claims"] == []
     nothing = evidence("trail", [], [])
     assert result.provenance["evidence_trail"] == nothing
@@ -411,10 +552,40 @@ def test_a_claims_request_over_the_models_line_is_not_sent(
     assert result.answer == LONG_ANSWER
     assert result.provenance["relevant_trail"]["quotes"]
     assert quoting_llm.requests_for("claims") == []
+    assert quoting_llm.requests_for("linking") == []
     assert result.provenance["claims"] == []
     assert result.provenance["evidence_trail"] == whole_trail(result.provenance)
     assert "claims: none, as their request would take about " in caplog.text
     assert events_in(result.run_dir)[-1]["type"] == "run_finished"
+
+
+def test_a_linking_request_over_the_models_line_leaves_only_its_claim_unlinked(
+    quoting_llm, window, tmp_path, caplog
+):
+    caplog.set_level(logging.WARNING, logger="r3con")
+    quoting_llm.answers(reasoning=citing(f"{HALLORAN} {LONG_CLAIM}", slice(None)))
+    result = claimed(
+        quoting_llm,
+        tmp_path,
+        (HALLORAN, ["q2"]),
+        (LONG_CLAIM, ["q4"]),
+        model=window(LINKING_WINDOW_TOKENS),
+    )
+    [linked, unlinked] = result.provenance["claims"]
+    trail = result.provenance["relevant_trail"]
+    assert linked["quotes"] == [place(trail["quotes"][1])]
+    assert (unlinked["text"], unlinked["documents"], unlinked["quotes"]) == (
+        LONG_CLAIM,
+        [],
+        [],
+    )
+    assert [linked_claim(r) for r in quoting_llm.requests_for("linking")] == [HALLORAN]
+    assert (
+        "claims: claim 2 keeps no quotes, as its linking request would take about "
+    ) in caplog.text
+    assert result.provenance["evidence_trail"] == evidence(
+        "claims", trail["documents"][:1], [trail["quotes"][1]]
+    )
 
 
 @pytest.mark.parametrize(
@@ -435,6 +606,7 @@ def test_a_claims_call_that_fails_leaves_no_claims_and_the_run_finishes(
     assert result.provenance["claims"] == []
     assert result.provenance["evidence_trail"] == whole_trail(result.provenance)
     assert len(quoting_llm.requests_for("claims")) == sends
+    assert quoting_llm.requests_for("linking") == []
     assert f"claims: none, as their call failed: {error}" in caplog.text
     events = events_in(result.run_dir)
     assert [event["type"] for event in events[-3:]] == [
@@ -447,6 +619,50 @@ def test_a_claims_call_that_fails_leaves_no_claims_and_the_run_finishes(
         whole_trail(result.provenance),
     )
     assert not (result.run_dir / "claims" / "error.txt").exists()
+
+
+@pytest.mark.parametrize(
+    ("reply", "sends", "error"),
+    [
+        (bad_key(), 1, "AuthenticationError: "),
+        ("not JSON", 3, "ValidationError: Invalid JSON: expected ident"),
+    ],
+    ids=["refused", "invalid"],
+)
+def test_a_linking_call_that_fails_leaves_only_its_claim_unlinked(
+    quoting_llm, tmp_path, caplog, events_in, reply, sends, error
+):
+    caplog.set_level(logging.WARNING, logger="r3con")
+    links = linking_reply({HALLORAN: ["q2"]})
+
+    def linking(request):
+        if linked_claim(request) == HALLORAN:
+            return links(request)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+    quoting_llm.answers(
+        claims=claims_reply((HALLORAN, []), (MERROW, [])), linking=linking
+    )
+    result = run_memos(quoting_llm, tmp_path)
+    trail = result.provenance["relevant_trail"]
+    [linked, unlinked] = result.provenance["claims"]
+    assert (linked["text"], linked["quotes"]) == (HALLORAN, [place(trail["quotes"][1])])
+    assert (unlinked["text"], unlinked["documents"], unlinked["quotes"]) == (
+        MERROW,
+        [],
+        [],
+    )
+    sent = [r for r in quoting_llm.requests_for("linking") if linked_claim(r) == MERROW]
+    assert len(sent) == sends
+    assert f"claims: claim 2 keeps no quotes, as its linking call failed: {error}" in (
+        caplog.text
+    )
+    assert result.provenance["evidence_trail"] == evidence(
+        "claims", trail["documents"][:1], [trail["quotes"][1]]
+    )
+    assert events_in(result.run_dir)[-1]["type"] == "run_finished"
 
 
 def test_a_cancel_during_the_claims_call_leaves_no_claims_and_finishes_the_run(
@@ -466,6 +682,44 @@ def test_a_cancel_during_the_claims_call_leaves_no_claims_and_finishes_the_run(
     assert saved["claims"] == []
     with pytest.raises(ValueError, match="this run finished"):
         resume(result.run_dir, TWO_LINE_MEMOS, completion=quoting_llm)
+
+
+def test_a_cancel_during_a_linking_call_leaves_its_claim_and_those_after_unlinked(
+    quoting_llm, tmp_path, caplog, events_in, one_worker
+):
+    caplog.set_level(logging.WARNING, logger="r3con")
+    cancel = threading.Event()
+    links = linking_reply({HALLORAN: ["q2"]})
+
+    # One claim linked at a time: Halloran's, then Merrow's, whose reply does not fit,
+    # so its call would be sent again but for the cancel, then Calder's.
+    def linking(request):
+        if linked_claim(request) == HALLORAN:
+            return links(request)
+        return cancelling(cancel, "not JSON")(request)
+
+    quoting_llm.answers(
+        reasoning=citing(f"{ANSWER} {CALDER}", slice(None)),
+        claims=claims_reply((HALLORAN, []), (MERROW, []), (CALDER, [])),
+        linking=linking,
+    )
+    result = run_memos(quoting_llm, tmp_path, cancel=cancel)
+    trail = result.provenance["relevant_trail"]
+    linked, *unlinked = result.provenance["claims"]
+    assert (linked["text"], linked["quotes"]) == (HALLORAN, [place(trail["quotes"][1])])
+    assert [(c["text"], c["documents"], c["quotes"]) for c in unlinked] == [
+        (MERROW, [], []),
+        (CALDER, [], []),
+    ]
+    sent = [linked_claim(r) for r in quoting_llm.requests_for("linking")]
+    assert sent == [HALLORAN, MERROW]
+    for k in (2, 3):
+        assert (
+            f"claims: claim {k} keeps no quotes, as its linking call failed: {CANCELLED}"
+        ) in caplog.text
+    assert events_in(result.run_dir)[-1]["type"] == "run_finished"
+    saved = json.loads((result.run_dir / "claims" / "result.json").read_text())
+    assert saved["claims"] == result.provenance["claims"]
 
 
 def test_a_cancel_during_the_claims_call_of_an_ask_finishes_the_ask(
@@ -609,11 +863,14 @@ def test_an_ask_finds_the_claims_of_its_own_answer_on_its_own_model(
 ):
     result = claimed(quoting_llm, tmp_path, (ANSWER, ["q2"]))
     quoting_llm.answers(
-        reasoning=citing(MERROW, slice(None)), claims=claims_reply((MERROW, ["q4"]))
+        reasoning=citing(MERROW, slice(None)),
+        claims=claims_reply((MERROW, [])),
+        linking=linking_reply({MERROW: ["q4"]}),
     )
     asked = ask(result, "Who else?", model="openai/gpt-4o", completion=quoting_llm)
     [_, request] = quoting_llm.requests_for("claims")
-    assert request["model"] == "openai/gpt-4o"
+    [_, linking] = quoting_llm.requests_for("linking")
+    assert request["model"] == linking["model"] == "openai/gpt-4o"
     user = request["messages"][1]["content"]
     assert user.startswith(f"<question>\nWho else?\n</question>\n<answer>\n{MERROW}\n")
     [claim] = asked.provenance["claims"]
@@ -663,15 +920,16 @@ def test_a_run_stopped_before_its_claims_finished_resumes_from_reasoning(
     sent = len(quoting_llm.requests)
     resumed = resume(result.run_dir, TWO_LINE_MEMOS, completion=quoting_llm)
     stages = [stage_of(request) for request in quoting_llm.requests[sent:]]
-    assert stages == ["reasoning", "claims"]
+    assert stages == ["reasoning", "claims", "linking"]
     assert resumed.provenance["claims"] == result.provenance["claims"]
 
 
 def as_before_claims(manifest: dict) -> None:
     """A run's manifest as r3con wrote one before it made claims."""
     del manifest["config"]["claims"]
-    del manifest["config"]["prompts"]["claims"]
-    del manifest["sources"]["prompts"]["claims"]
+    for stage in ("claims", "linking"):
+        del manifest["config"]["prompts"][stage]
+        del manifest["sources"]["prompts"][stage]
 
 
 def test_a_run_made_before_claims_is_asked_without_them_and_stays_finished(
@@ -709,7 +967,7 @@ def test_a_resume_refuses_a_claims_prompt_that_now_resolves_elsewhere(
     quoting_llm, tmp_path
 ):
     run_dir = failed_with_its_claims_prompt_shadowed(quoting_llm, tmp_path)
-    with pytest.raises(ValueError, match=r"claims now reads \S+/prompts/claims/v2"):
+    with pytest.raises(ValueError, match=r"claims now reads \S+/prompts/claims/v3"):
         resume(run_dir, TWO_LINE_MEMOS, completion=quoting_llm)
 
 

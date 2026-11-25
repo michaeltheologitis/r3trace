@@ -585,6 +585,18 @@ def test_a_transcript_ending_in_a_call_that_raised_shows_what_it_sent(logger):
     assert contents == ["S", "U1", "A1", "<observation>obs</observation>"]
 
 
+def test_a_held_transcript_shows_the_call_it_held_not_those_recorded_after(logger):
+    run = StageRun(stage="claims", task_logger=logger)
+    split = [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]
+    run.add_step(kind="claims", messages=split, response=reply("A"))
+    run.hold_transcript()
+    run.add_step(kind="linking-c1", messages=[], response=reply("L1"))
+    contents = [m["content"] for m in flushed_transcript(run)["messages"]]
+    assert contents == ["S", "U", "A"]
+    calls = json.loads((run.dir / "calls.json").read_text())
+    assert [call["kind"] for call in calls] == ["claims", "linking-c1"]
+
+
 def test_a_multi_turn_transcript_is_the_last_turns_whole_thread(logger):
     run = StageRun(stage="reasoning", task_logger=logger)
     first = [{"role": "system", "content": "S"}, {"role": "user", "content": "U1"}]

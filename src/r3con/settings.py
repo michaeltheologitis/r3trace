@@ -35,9 +35,9 @@ PROMPTS_DIR = PKG_DIR / "prompts"  # prompts/<stage>/<version>.yaml
 CONFIGS_DIR = PKG_DIR / "configs"  # configs/<name>.yaml
 
 # Max documents processed concurrently within ONE task — the relevance fan-out (each
-# round) and the per-document parsing fan-out. A caller running several tasks at once
-# should keep tasks × this under their endpoint's concurrency cap. Override via
-# R3CON_DOC_WORKERS.
+# round) and the per-document parsing fan-out — and max linking calls under way at once
+# in the claims stage. A caller running several tasks at once should keep tasks × this
+# under their endpoint's concurrency cap. Override via R3CON_DOC_WORKERS.
 DOC_WORKERS = 16
 
 # Hard cap on the reasoning agent's turns.
@@ -99,8 +99,9 @@ _CEILINGS: dict[str, int] = {"window_margin_percent": 99}
 
 
 def active_doc_workers() -> int:
-    """Max documents processed concurrently within one task —
-    ``R3CON_DOC_WORKERS`` else ``DOC_WORKERS``.
+    """Max documents processed concurrently within one task, and max linking calls
+    under way at once in its claims stage — ``R3CON_DOC_WORKERS`` else
+    ``DOC_WORKERS``.
 
     Raises:
         ValueError: naming whichever of the two is set to anything but an integer >= 1.

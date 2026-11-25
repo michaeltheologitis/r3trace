@@ -34,7 +34,8 @@ Config file shape (``configs/<name>.yaml``)::
       structuring/parsing: v3
       reasoning/direct: v3
       reasoning/coding: v3
-      claims: v1                 # read only when claims are on
+      claims: v3                 # read only when claims are on
+      linking: v1                # read only when claims are on, at the sentence level
     params:                      # optional; passed straight to litellm.completion
       temperature: 0.7
 """
@@ -62,6 +63,7 @@ PromptStage = Literal[
     "reasoning/direct",
     "reasoning/coding",
     "claims",
+    "linking",
 ]
 PROMPT_STAGES: tuple[PromptStage, ...] = get_args(PromptStage)
 
@@ -102,6 +104,7 @@ _PROMPT_STAGE_ABBR: dict[str, str] = {
     "reasoning/direct": "direct",
     "reasoning/coding": "coding",
     "claims": "claims",
+    "linking": "linking",
 }
 
 
@@ -158,9 +161,13 @@ class RunConfig(BaseModel):
 
     @property
     def prompt_stages(self) -> tuple[PromptStage, ...]:
-        """The stages whose prompt this config reads: every one but claims when they
-        are off."""
-        return tuple(s for s in PROMPT_STAGES if self.claims or s != "claims")
+        """The stages whose prompt this config reads: every one but claims and linking
+        when claims are off, and but linking at the document level, which links no
+        claim to quotes."""
+        unread = set() if self.claims else {"claims", "linking"}
+        if self.evidence_level == "document":
+            unread.add("linking")
+        return tuple(s for s in PROMPT_STAGES if s not in unread)
 
     def _identity_parts(self) -> list[str]:
         """The output-shaping components that make up the run identity, in label
@@ -200,7 +207,7 @@ class RunConfig(BaseModel):
         match, so **every** output-shaping axis must appear in ``_identity_parts``. For
         example::
 
-            exp[model=gpt-6-luna,rounds=2,reasoning=direct,prompts=(rel1=v3,rel2=v4,schema=v2,parse=v4,direct=v5,coding=v4,claims=v2)]
+            exp[model=gpt-6-luna,rounds=2,reasoning=direct,prompts=(rel1=v3,rel2=v4,schema=v2,parse=v4,direct=v5,coding=v4,claims=v3,linking=v1)]
         """
         return f"{self.name}[" + ",".join(self._identity_parts()) + "]"
 

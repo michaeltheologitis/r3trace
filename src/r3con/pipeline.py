@@ -20,9 +20,11 @@ Wires the three moves of the method — see :mod:`r3con.stages`:
    fit the model's window). The answer cites the summaries it used, and the documents
    whose parsed records it used, by id.
 
-After reasoning, one more call finds the answer's **claims**, each with the evidence on
-its relevant trail that supports it (:mod:`r3con.stages.claims`), unless the config
-turns claims off.
+After reasoning, the answer is split into its **claims**, and each is linked to the
+evidence on its relevant trail that supports it (:mod:`r3con.stages.claims`): at the
+sentence level one call splits it, then one call per claim, in parallel, links it to
+its quotes; at the document level one call does both. Unless the config turns claims
+off.
 
 The document is the unit throughout: a document too long for the model's window is read
 in parts (:mod:`r3con.splitting`), and the whole collection is never placed in one
@@ -294,7 +296,8 @@ class Answer:
       and the ``quotes`` that do, each by its ``{document, start, end}`` among the
       relevant trail's, none at the document level
       (:class:`~r3con.provenance.Claim`). It is empty when the config turns claims
-      off, or when their call finds none (:func:`~r3con.stages.claims.find_claims`).
+      off, or when the call that splits the answer into them finds none
+      (:func:`~r3con.stages.claims.find_claims`).
       ``provenance["evidence_trail"]`` is the part of the relevant trail the claims
       rest on (:func:`~r3con.provenance.evidence_trail`): ``from`` ``"claims"``, the
       ``documents`` its claims name and the ``quotes`` they cite, in the relevant
@@ -481,6 +484,7 @@ def _claims_stage(
     document_ids: list[str],
     config: RunConfig,
     max_attempts: int,
+    workers: int,
     splits: Splits,
     llm_kwargs: dict[str, Any],
     task_logger: TaskLogger | None,
@@ -488,12 +492,13 @@ def _claims_stage(
     resumed: bool = False,
 ) -> tuple[AnswerProvenance, StageRun | None]:
     """The provenance of ``answer``, whose relevant trail is ``relevant``, with its
-    claims (:func:`r3con.provenance.with_claims`), and the stage run that found them,
-    under ``claims/``."""
+    claims (:func:`r3con.provenance.with_claims`), at most ``workers`` linking calls
+    under way at once, and the stage run that found them, under ``claims/``."""
     if not config.claims:
         return with_claims(relevant, []), None
     emit("claims_started")
-    # No cancel here: a cancelled claims call leaves no claims, and the run finishes.
+    # No cancel here: a cancelled claims call leaves no claims, a cancelled linking call
+    # its claim no quotes, and the run finishes.
     with _recorded_stage(
         task_logger,
         "claims",
@@ -514,6 +519,7 @@ def _claims_stage(
             model=config.model,
             max_attempts=max_attempts,
             splits=splits,
+            workers=workers,
             run=record.run,
             **llm_kwargs,
         )
@@ -582,7 +588,9 @@ def run_pipeline(
     ``cancel`` stops the run as :func:`r3con.run` says: once it is set, no new model
     call is sent and no stage starts, and the stage then under way, or the next one,
     raises :class:`~r3con.runtime.llm.Cancelled` as any failing stage raises; but once
-    reasoning has answered, the run finishes, with no claims if their call had not.
+    reasoning has answered, the run finishes, with no claims if the call that splits
+    the answer into them had not answered, and no quotes for a claim whose linking
+    call had not.
 
     The run reports its progress as events, each a dict of JSON values with its
     ``type``, its wall-clock ``time`` in ISO 8601, and these fields:
@@ -954,6 +962,7 @@ def _build_and_answer(
         document_ids=document_ids,
         config=config,
         max_attempts=caps["reasoning_max_attempts"],
+        workers=caps["doc_workers"],
         splits=splits,
         llm_kwargs=llm_kwargs,
         task_logger=task_logger,
@@ -1937,6 +1946,7 @@ def ask_pipeline(
         document_ids=document_ids,
         config=config,
         max_attempts=caps["reasoning_max_attempts"],
+        workers=caps["doc_workers"],
         splits=splits,
         llm_kwargs=llm_kwargs,
         task_logger=task_logger,

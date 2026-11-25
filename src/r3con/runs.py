@@ -75,11 +75,15 @@ Layout per ``logs/<run-folder>/``:
   gave; r3con reads those too.
 - ``claims/`` (after reasoning, unless the config turns claims off) — ``result.json``
   (``{claims, evidence_trail, totals}``, the answer's claims and its evidence trail
-  as :attr:`r3con.pipeline.Answer.provenance` gives them, no claims when their call
-  is not sent, fails or is cancelled: :func:`r3con.stages.claims.find_claims`) +
-  ``calls.json`` + ``transcript.yaml``. Its ``evidence_trail`` is written for those
-  who read the folder: :func:`r3con.trace` derives it again from the claims and the
-  relevant trail rather than read it, so a folder written without it traces the
+  as :attr:`r3con.pipeline.Answer.provenance` gives them, no claims when the call that
+  splits the answer into them is not sent, fails or is cancelled:
+  :func:`r3con.stages.claims.find_claims`) + ``calls.json`` (``claims``, the call that
+  splits the answer into its claims, and at the sentence level ``linking-c{k}``, the
+  call that links the k-th claim, from 1, to its quotes, each with ``-retry-{n}``
+  added to a resend) + ``transcript.yaml``, the call that splits the answer, not a
+  linking call, as those finish in any order. Its ``evidence_trail`` is written for
+  those who read the folder: :func:`r3con.trace` derives it again from the claims and
+  the relevant trail rather than read it, so a folder written without it traces the
   same.
 - ``skipped.json`` — written when the run finishes, for reading only: every relevance
   note and parse it skipped, as its reply stayed unusable once its resends and
@@ -631,6 +635,8 @@ class StageRun:
         # An earlier attempt's calls, as its calls.json holds them, written back first.
         self._earlier = _earlier_calls(self.dir / "calls.json") if resumed else []
         self._lock = threading.Lock()
+        # The step transcript.yaml shows, when not the last (hold_transcript).
+        self._held: StepRecord | None = None
 
     def add_step(
         self,
@@ -669,6 +675,12 @@ class StageRun:
             )
             self.steps.append(step)
         return step
+
+    def hold_transcript(self) -> None:
+        """Make ``transcript.yaml`` show the call recorded last so far, whatever calls
+        are recorded after it, as when they run in parallel and finish in any order."""
+        with self._lock:
+            self._held = self.steps[-1] if self.steps else None
 
     def flush(self, *, write_transcript: bool = True) -> Path:
         """Write ``calls.json`` (always) and, unless ``write_transcript=False``,
@@ -731,15 +743,15 @@ class StageRun:
 
     def _build_transcript_messages(self) -> list[dict[str, Any]]:
         """The readable conversation = the final step's full message thread + its
-        reply, if it got one. For a multi-turn loop (codeact) the last step's
-        ``messages`` already contain the whole grown conversation; for a retry loop (the
-        schema proposal) they are the final attempt — earlier attempts live in
-        ``calls.json``. A stage that ended on a call that raised shows the thread that
+        reply, if it got one, or the held step's (:meth:`hold_transcript`). For a
+        multi-turn loop (codeact) the last step's ``messages`` already contain the
+        whole grown conversation; for a retry loop (the schema proposal) they are the
+        final attempt — earlier attempts live in ``calls.json``. A stage that ended on a call that raised shows the thread that
         call sent, with no reply. Empty run → ``[]``. (Stages with many parallel calls
         flush with ``write_transcript=False`` and never reach here.)"""
         if not self.steps:
             return []
-        last = self.steps[-1]
+        last = self._held or self.steps[-1]
         thread = list(last.messages)
         if last.response.get("content"):
             thread.append(last.response)
