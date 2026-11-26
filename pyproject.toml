@@ -104,7 +104,7 @@ Repository = "https://github.com/michaeltheologitis/r3trace"
 # service its keys are saved under in the Keychain (r3trace.app.server's
 # MAC_APP_KEY_SERVICE).
 # formal_name, the name it shows in Finder, the Dock, its menu and its window's title,
-# can.
+# can, with r3trace.app.window's FORMAL_NAME, which Toga is given.
 [tool.briefcase]
 bundle = "io.github.michaeltheologitis"
 

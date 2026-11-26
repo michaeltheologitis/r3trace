@@ -35,6 +35,11 @@ from r3trace.app import updates
 from r3trace.app.server import MAC_APP_KEY_SERVICE, QUIT_SECONDS, SAVE_DIALOG, serve
 from r3trace.logging_setup import configure_logging, get_logger
 
+# Toga's names for the app, which it would otherwise read from whichever "r3trace"
+# distribution comes first on the path, Briefcase's or pip's: the distribution, the
+# name the app shows, and, as its id, its bundle id, MAC_APP_KEY_SERVICE.
+APP_NAME = "r3trace"
+FORMAL_NAME = "R3Trace"
 WINDOW_SIZE = (1280, 820)
 # Below macOS's ephemeral ports, 49152 and up; a new one would lose the page's settings.
 PORT = 47313
@@ -283,7 +288,13 @@ def main() -> None:
         os._exit(0)
 
     try:
-        app = toga.App(startup=page, on_exit=hide)
+        app = toga.App(
+            formal_name=FORMAL_NAME,
+            app_id=MAC_APP_KEY_SERVICE,
+            app_name=APP_NAME,
+            startup=page,
+            on_exit=hide,
+        )
         # Toga 0.5.7's private hook, which uv.lock pins: a newer Toga may move it.
         app._impl.cocoa_applicationShouldTerminate = partial(end, app)
         app.main_loop()

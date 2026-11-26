@@ -7,6 +7,7 @@ import runpy
 import sys
 import threading
 import time
+import tomllib
 from collections.abc import Callable, Iterator
 from functools import partial
 from pathlib import Path
@@ -33,6 +34,7 @@ from tests.fakes import (
 )
 
 pytestmark = [pytest.mark.enable_socket, pytest.mark.allow_hosts(["127.0.0.1"])]
+PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
 TIMEOUT_SECONDS = 10
 TOGA_WINDOW_SIZE = (640, 480)
 MAC_APP_KEY = "sk-saved-by-the-mac-app-1234"
@@ -199,8 +201,15 @@ class FakeApp:
     exits: list[int]
 
     def __init__(
-        self, *, startup: Callable[..., FakeWebView], on_exit: Callable[..., bool]
+        self,
+        *,
+        formal_name: str,
+        app_id: str,
+        app_name: str,
+        startup: Callable[..., FakeWebView],
+        on_exit: Callable[..., bool],
     ) -> None:
+        self.named = (formal_name, app_id, app_name)
         self.startup = startup
         self.on_exit = on_exit
         self.main_window = FakeWindow()
@@ -355,6 +364,16 @@ def test_the_mac_app_keeps_its_keys_under_its_bundle_id_never_r3trace_apps(
         (MAC_APP_KEY_SERVICE, "anthropic"): MAC_APP_KEY,
         (APP_KEY_SERVICE, "gemini"): R3TRACE_APP_KEY,
     }
+
+
+def test_toga_names_the_app_as_briefcase_does_with_its_bundle_id_as_its_id(
+    opened: list[FakeApp],
+):
+    config = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    ((name, app),) = config["tool"]["briefcase"]["app"].items()
+    window.main()
+    (opened_app,) = opened
+    assert opened_app.named == (app["formal_name"], MAC_APP_KEY_SERVICE, name)
 
 
 def test_a_mac_app_with_sparkle_checks_for_updates_from_its_app_menu(

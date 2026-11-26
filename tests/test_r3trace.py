@@ -169,7 +169,7 @@ def without_provenance(result: dict) -> None:
 
 
 def with_a_seed(manifest: dict) -> None:
-    """As r3trace before 0.2.0 recorded its config."""
+    """As r3context before 0.2.0 recorded its config."""
     manifest["config"]["seed"] = 7
 
 

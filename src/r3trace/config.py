@@ -298,7 +298,7 @@ def load_config(
         )
         if "seed" in unknown:
             message += (
-                " `seed` was removed in r3trace 0.2.0; to send one, put it in `params` "
+                " `seed` was removed in r3context 0.2.0; to send one, put it in `params` "
                 f"(params: {{seed: {raw['seed']}}})."
             )
         raise ValueError(message)

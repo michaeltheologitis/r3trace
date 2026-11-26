@@ -413,7 +413,7 @@ def test_a_misspelt_override_is_refused(name, value):
     [
         (
             {"seed": 42},
-            r"\['seed'\].*`seed` was removed in r3trace 0\.2\.0.*params: \{seed: 42\}",
+            r"\['seed'\].*`seed` was removed in r3context 0\.2\.0.*params: \{seed: 42\}",
         ),
         ({"sumary_rounds": 3}, r"does not read: \['sumary_rounds'\]"),
         ({"overrides": {"model": "x"}}, r"does not read: \['overrides'\]"),

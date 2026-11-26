@@ -6,7 +6,7 @@ they differ.
 The run folder, ``tests/app/sample/20261105T173546Z_bb4f0c37/``, is a real run, copied
 unedited from the ``logs/`` r3trace wrote it to, as r3con, its name before 0.6.51:
 
-- The run: ``r3trace run QUESTION examples/memos`` with r3trace 0.6.4 (main at 20964ea), its
+- The run: ``r3trace run QUESTION examples/memos`` with r3context 0.6.4 (main at 20964ea), its
   default config and no overrides: model ``openai/gpt-6-luna``, two summary rounds,
   direct reasoning, empty ``params``, and that config's prompt pins (relevance v2 and
   v3, schema v1, parsing v3, direct v3). QUESTION: "Which maintenance contractor's sites
