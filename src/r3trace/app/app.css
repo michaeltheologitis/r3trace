@@ -115,6 +115,7 @@ p { margin: 0; }
   padding-block: 0.65em;
 }
 .brand { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.brand .trace { color: var(--claim); }
 .status {
   flex: 1;
   min-width: 0;

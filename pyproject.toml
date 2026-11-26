@@ -1,6 +1,6 @@
 [project]
 name = "r3trace"
-version = "0.6.52"
+version = "0.6.53"
 description = "Inspectable long-context reasoning with evidence attribution."
 readme = "README.md"
 authors = [
