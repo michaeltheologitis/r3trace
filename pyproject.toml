@@ -1,7 +1,7 @@
 [project]
 name = "r3trace"
-version = "0.6.51"
-description = "Just-in-time reasoning over a collection of documents: surface relevance, structure it, reason over it."
+version = "0.6.52"
+description = "Inspectable long-context reasoning with evidence attribution."
 readme = "README.md"
 authors = [
     { name = "Michael Theologitis", email = "michael.theologitis@outlook.com" }
