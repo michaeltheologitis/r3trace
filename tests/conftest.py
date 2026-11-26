@@ -25,7 +25,7 @@ from litellm.llms.github_copilot.authenticator import (
     Authenticator as CopilotAuthenticator,
 )
 
-from r3con.config import normalize_model_name
+from r3trace.config import normalize_model_name
 from tests.fakes import (
     ANSWERING,
     FakeKeyring,
@@ -38,12 +38,12 @@ litellm.suppress_debug_info = True
 
 MEMOS = Path(__file__).resolve().parents[1] / "examples" / "memos"
 MODEL = "openai/gpt-6-luna"
-R3CON_VARIABLES = (
-    "R3CON_LOGS_DIR",
-    "R3CON_DOC_WORKERS",
-    "R3CON_PROMPTS_DIR",
-    "R3CON_CONFIGS_DIR",
-    "R3CON_LOG_LEVEL",
+R3TRACE_VARIABLES = (
+    "R3TRACE_LOGS_DIR",
+    "R3TRACE_DOC_WORKERS",
+    "R3TRACE_PROMPTS_DIR",
+    "R3TRACE_CONFIGS_DIR",
+    "R3TRACE_LOG_LEVEL",
 )
 ROUTER_CALLBACKS = (
     "success_callback",
@@ -234,7 +234,7 @@ def answering_llm(llm: FakeLLM) -> FakeLLM:
 def one_worker(monkeypatch: pytest.MonkeyPatch) -> None:
     """Documents read one after another, so a failure leaves those before it done and
     those after it unsent."""
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "1")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "1")
 
 
 @pytest.fixture
@@ -372,26 +372,26 @@ def configs(tmp_path):
 
 @pytest.fixture
 def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
-    """The seconds r3con waits before each resend, recorded instead of waited."""
+    """The seconds r3trace waits before each resend, recorded instead of waited."""
     recorded: list[float] = []
     monkeypatch.setattr(
-        "r3con.runtime.llm._sleep", lambda seconds, cancel: recorded.append(seconds)
+        "r3trace.runtime.llm._sleep", lambda seconds, cancel: recorded.append(seconds)
     )
     return recorded
 
 
 @pytest.fixture
-def isolated_r3con(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
-    """No ``R3CON_*`` variable, no key registered for masking, the test's own working
-    directory, and the ``r3con`` logger restored afterwards."""
-    for name in R3CON_VARIABLES:
+def isolated_r3trace(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[None]:
+    """No ``R3TRACE_*`` variable, no key registered for masking, the test's own working
+    directory, and the ``r3trace`` logger restored afterwards."""
+    for name in R3TRACE_VARIABLES:
         # Set, then delete, so the undo also removes a value the code under test writes.
         monkeypatch.setenv(name, "")
         monkeypatch.delenv(name)
     monkeypatch.chdir(tmp_path)
     # Each test starts with no key registered for masking by an earlier one's calls.
-    monkeypatch.setattr("r3con.masking._registered", set())
-    logger = logging.getLogger("r3con")
+    monkeypatch.setattr("r3trace.masking._registered", set())
+    logger = logging.getLogger("r3trace")
     level, propagate, handlers = logger.level, logger.propagate, list(logger.handlers)
     yield
     logger.setLevel(level)
@@ -404,7 +404,7 @@ def credential_store(monkeypatch: pytest.MonkeyPatch) -> FakeKeyring:
     """An empty credential store in memory, in keyring's place for the whole test, so
     that no test reads or writes the system's. keyring finds the system's only when
     first asked for a store, which this answers first; a process the test starts,
-    such as ``r3con app``, gets keyring's null store, which holds nothing."""
+    such as ``r3trace app``, gets keyring's null store, which holds nothing."""
     monkeypatch.setenv(KEYRING_BACKEND_VARIABLE, NULL_KEYRING)
     store = FakeKeyring()
     keyring.set_keyring(store)
@@ -415,12 +415,12 @@ def credential_store(monkeypatch: pytest.MonkeyPatch) -> FakeKeyring:
 def _isolated(
     request: pytest.FixtureRequest,
     monkeypatch: pytest.MonkeyPatch,
-    isolated_r3con: None,
+    isolated_r3trace: None,
 ) -> None:
     if not any(request.node.get_closest_marker(m) for m in ("live", "allow_hosts")):
         monkeypatch.setattr(litellm, "completion", FakeLLM())
     # Each test is a process of its own to a provider that signs in on its first call.
-    monkeypatch.setattr("r3con.runtime.llm._signed_in", set())
+    monkeypatch.setattr("r3trace.runtime.llm._signed_in", set())
     if not request.node.get_closest_marker("live"):
         request.getfixturevalue("waits")
 

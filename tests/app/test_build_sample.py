@@ -2,7 +2,7 @@ from collections.abc import Callable
 
 import pytest
 
-from r3con import Answer, ask, read_documents, run, settings
+from r3trace import Answer, ask, read_documents, run, settings
 from tests.app.build_sample import (
     APP_JS,
     MEMOS,
@@ -31,7 +31,7 @@ UNFIT_SCHEMA = "Thought: none.\n<schema>\nnot a schema\n</schema>"
 def todays_run(
     answering_llm: FakeLLM, shown_ids: Callable[[Request], list[str]], tmp_path
 ) -> Answer:
-    """A run over the memos as this r3con saves it, its answer citing the first summary
+    """A run over the memos as this r3trace saves it, its answer citing the first summary
     and the last parse; ``answering_llm`` answering so from then on."""
     answering_llm.answers(
         relevance=quoting_its_first_line_and_citing_all_shown(shown_ids),
@@ -47,7 +47,7 @@ def test_app_js_holds_the_block_its_run_folder_builds(name: str) -> None:
     assert app_block(app, name) == built_blocks()[name]
 
 
-def test_a_run_and_ask_this_r3con_saves_build_with_their_saved_provenance(
+def test_a_run_and_ask_this_r3trace_saves_build_with_their_saved_provenance(
     todays_run: Answer, answering_llm: FakeLLM
 ) -> None:
     asked = ask(todays_run, "Who else?", completion=answering_llm)
@@ -121,7 +121,7 @@ def test_a_note_sent_twice_fails_the_build_naming_its_node(todays_run: Answer) -
         build_sample(todays_run.run_dir, MEMOS)
 
 
-def test_the_sample_is_a_folder_an_earlier_r3con_saved_so_its_build_reads_one():
+def test_the_sample_is_a_folder_an_earlier_r3trace_saved_so_its_build_reads_one():
     saved = load(RUN_FOLDER / "reasoning/result.json")["provenance"]
     assert list(saved) == ["summary_ids", "parse_ids"]
     assert "evidence_trail" not in load(RUN_FOLDER / "claims/result.json")

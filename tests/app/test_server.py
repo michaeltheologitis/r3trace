@@ -23,8 +23,8 @@ from litellm.exceptions import RateLimitError
 from starlette.testclient import TestClient
 from starlette.types import ASGIApp
 
-from r3con import r3con
-from r3con.app.server import (
+from r3trace import r3trace
+from r3trace.app.server import (
     APP_KEY_SERVICE,
     CONTINUE_FAILED,
     CONTINUE_REFUSALS,
@@ -56,10 +56,10 @@ from r3con.app.server import (
     listen,
     serve,
 )
-from r3con.documents import _EXTRACTORS, TEXT_SUFFIXES, _PdfNoText, read_documents
-from r3con.masking import MASK
-from r3con.runs import run_lock
-from r3con.settings import CONFIGS_DIR
+from r3trace.documents import _EXTRACTORS, TEXT_SUFFIXES, _PdfNoText, read_documents
+from r3trace.masking import MASK
+from r3trace.runs import run_lock
+from r3trace.settings import CONFIGS_DIR
 from tests.documents import (
     CERTIFICATE_ENCRYPTION,
     CORRUPT_DOCX,
@@ -91,12 +91,12 @@ TOKEN = "the-launch-token"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
 BASE_URL = f"http://127.0.0.1:{PORT}"
 MEMOS = Path(__file__).resolve().parents[2] / "examples" / "memos"
-APP_DIR = Path(__file__).resolve().parents[2] / "src" / "r3con" / "app"
+APP_DIR = Path(__file__).resolve().parents[2] / "src" / "r3trace" / "app"
 LONG_RETRY_AFTER_SECONDS = 60
 # Far below GATE_TIMEOUT_SECONDS, which ends a held call by itself.
 STILL_WAITING_SECONDS = 0.5
 FORCED_EXIT_SECONDS = 5
-WORKER_PREFIX = "r3con-app-"
+WORKER_PREFIX = "r3trace-app-"
 QUESTION = "Which contractor's sites logged the most equipment incidents in Q3?"
 MODEL = "openai/gpt-6-luna"
 # A bare OpenAI name that litellm's model map places from its floor, 1.103, on.
@@ -330,8 +330,8 @@ def held_llm(llm: FakeLLM) -> FakeLLM:
 
 @pytest.fixture
 def one_call_at_a_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    """r3con reads one document at a time, so a held model holds the only call."""
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "1")
+    """r3trace reads one document at a time, so a held model holds the only call."""
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "1")
 
 
 @pytest.fixture
@@ -363,7 +363,7 @@ def memos() -> list[str]:
 
 
 def capped(request: Request) -> dict[str, Any]:
-    """The token cap ``request`` was sent, as the params r3con sends it in, if any."""
+    """The token cap ``request`` was sent, as the params r3trace sends it in, if any."""
     return {name: request[name] for name in ("max_tokens",) if name in request}
 
 
@@ -509,7 +509,7 @@ def launched(
     model: FakeLLM | None = None,
     key_service: str = APP_KEY_SERVICE,
 ) -> Iterator[httpx2.Client]:
-    """A client for a server started as ``r3con app`` starts one, or with
+    """A client for a server started as ``r3trace app`` starts one, or with
     ``key_service``, as the Mac app does, stopped after."""
     url, stop = serve(logs_dir=logs_dir, completion=model, key_service=key_service)
     try:
@@ -1007,13 +1007,13 @@ def test_a_key_a_provider_quotes_in_its_error_is_masked_in_the_event_and_the_log
         monkeypatch.setenv("OPENAI_API_KEY", ENVIRONMENT_KEY)
         key = ENVIRONMENT_KEY
     llm.answers(relevance=RuntimeError(f"Incorrect API key provided: {key}."))
-    with caplog.at_level(logging.ERROR, logger="r3con.app"):
+    with caplog.at_level(logging.ERROR, logger="r3trace.app"):
         run_id = start_run(client)
         last = run_events(client, run_id)[-1]
         wait_for_worker(run_id)
     assert last["type"] == "run_failed"
     assert last["error"] == "RuntimeError: Incorrect API key provided: REDACTED."
-    logged = [r.getMessage() for r in caplog.records if r.name == "r3con.app"]
+    logged = [r.getMessage() for r in caplog.records if r.name == "r3trace.app"]
     assert logged == [f"run_failed: {last['error']}"]
 
 
@@ -1036,7 +1036,7 @@ def test_a_saved_key_is_remembered_by_the_next_launch(
 @pytest.mark.parametrize(
     ("saved_by", "loaded_by"),
     [(APP_KEY_SERVICE, MAC_APP_KEY_SERVICE), (MAC_APP_KEY_SERVICE, APP_KEY_SERVICE)],
-    ids=["r3con app's, by the Mac app", "the Mac app's, by r3con app"],
+    ids=["r3trace app's, by the Mac app", "the Mac app's, by r3trace app"],
 )
 def test_a_key_saved_by_one_program_is_not_loaded_by_the_other(
     logs_dir: Path, credential_store: FakeKeyring, saved_by: str, loaded_by: str
@@ -1072,7 +1072,10 @@ def test_a_key_from_the_store_is_sent_and_masked_like_any_other(
 ):
     credential_store.passwords[APP_KEY_SERVICE, "openai"] = OPENAI_KEY
     llm.answers(relevance=RuntimeError(f"Incorrect API key provided: {OPENAI_KEY}."))
-    with caplog.at_level(logging.INFO, logger="r3con"), launched(logs_dir, llm) as http:
+    with (
+        caplog.at_level(logging.INFO, logger="r3trace"),
+        launched(logs_dir, llm) as http,
+    ):
         run_id = http.post("/api/runs", json=run_body()).json()["run_id"]
         events = http.get(f"/api/runs/{run_id}/events")
         wait_for_worker(run_id)
@@ -1101,12 +1104,12 @@ def test_a_key_the_store_fails_to_delete_is_still_forgotten_here_and_the_log_say
 ):
     keyring.set_keyring(UndeletableKeyring())
     client.post("/api/keys", json=STORED_OPENAI)
-    with caplog.at_level(logging.INFO, logger="r3con"):
+    with caplog.at_level(logging.INFO, logger="r3trace"):
         forget = {"provider": "openai"}
         response = client.request("DELETE", "/api/keys", json=forget)
     assert (response.status_code, response.json()["openai"]) == (200, None)
     said = store_failed(MAY_LOAD_AGAIN, "PasswordDeleteError")
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.app"] == [said]
+    assert [r.getMessage() for r in caplog.records if r.name == "r3trace.app"] == [said]
     assert OPENAI_KEY not in caplog.text
 
 
@@ -1131,7 +1134,7 @@ def test_without_a_working_store_a_key_lasts_until_the_app_closes_and_is_never_l
     said: list[str],
 ):
     keyring.set_keyring(store())
-    with caplog.at_level(logging.INFO, logger="r3con"):
+    with caplog.at_level(logging.INFO, logger="r3trace"):
         responses = [client.post("/api/keys", json=STORED_OPENAI)]
         finished_run(client)
         responses.append(client.get("/api/keys"))
@@ -1142,7 +1145,7 @@ def test_without_a_working_store_a_key_lasts_until_the_app_closes_and_is_never_l
     kept = [response.json()["openai"] for response in responses]
     assert kept == [UNTIL_CLOSED_OPENAI, UNTIL_CLOSED_OPENAI, None]
     assert {call["api_key"] for call in llm.requests} == {OPENAI_KEY}
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.app"] == said
+    assert [r.getMessage() for r in caplog.records if r.name == "r3trace.app"] == said
     assert OPENAI_KEY not in caplog.text
     assert all(OPENAI_KEY not in response.text for response in responses)
 
@@ -1157,10 +1160,10 @@ def test_a_launch_without_a_working_store_starts_with_no_saved_key_and_says_why(
     said: list[str],
 ):
     keyring.set_keyring(store())
-    with caplog.at_level(logging.INFO, logger="r3con"), launched(logs_dir) as http:
+    with caplog.at_level(logging.INFO, logger="r3trace"), launched(logs_dir) as http:
         status = http.get("/api/keys").json()
     assert status == {"openai": None, "anthropic": None, "gemini": None, "other": []}
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.app"] == said
+    assert [r.getMessage() for r in caplog.records if r.name == "r3trace.app"] == said
 
 
 @pytest.mark.enable_socket
@@ -1332,7 +1335,7 @@ def test_a_follow_up_is_sent_its_own_cap_whatever_its_runs(
     params: dict[str, int],
     overridden: bool,
 ):
-    """With no cap over a run with none, r3con asks as it does by default."""
+    """With no cap over a run with none, r3trace asks as it does by default."""
     run_id = finished_run(client, **run_cap)
     sent = len(claiming_llm.requests)
     events = ask_events(client, run_id, {**ASK, **ask_cap})
@@ -1357,10 +1360,10 @@ def test_a_follow_up_is_sent_its_own_cap_whatever_its_runs(
     ],
     ids=["the-runs-model", "another-model"],
 )
-def test_a_follow_ups_cap_is_sent_beside_the_params_r3con_asks_with(
+def test_a_follow_ups_cap_is_sent_beside_the_params_r3trace_asks_with(
     client: TestClient, llm: FakeLLM, model: str, params: dict[str, Any]
 ):
-    """r3con asks with its run's params on the run's model, and with none on another."""
+    """r3trace asks with its run's params on the run's model, and with none on another."""
     with_config_params(CONFIG_PARAMS)
     run_id = finished_run(client, max_tokens=CAP)
     sent = len(llm.requests)
@@ -1635,7 +1638,7 @@ def test_a_run_folder_outside_the_logs_dir_is_not_continued_and_the_log_says_why
     run_dir.rename(outside)
     run_dir.symlink_to(outside, target_is_directory=True)
     before, sent = the_runs_own_files(outside), len(llm.requests)
-    with caplog.at_level(logging.WARNING, logger="r3con.app"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.app"):
         response = continue_run(client, run_id)
     assert refusal(response) == (409, refused("not_continuable"))
     assert llm.requests[sent:] == []
@@ -1663,7 +1666,7 @@ def test_a_run_a_continue_finished_says_it_has_finished_when_continued_again(
 def test_a_run_refused_before_it_started_has_no_folder_to_continue(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "0")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "0")
     run_id = start_run(client)
     assert run_events(client, run_id)[-1]["stage"] is None
     assert refusal(continue_run(client, run_id)) == (409, refused("not_continuable"))
@@ -1866,7 +1869,7 @@ def test_a_runs_representation_is_all_an_ask_reads_of_its_folder(
     for path, content in files.items():
         (copy / path).parent.mkdir(parents=True, exist_ok=True)
         (copy / path).write_text(json.dumps(content), encoding="utf-8")
-    answer = r3con.ask(copy, ASK["question"], completion=llm)
+    answer = r3trace.ask(copy, ASK["question"], completion=llm)
     assert list(files) == list(REPRESENTATION_FILES)
     assert answer.answer == ANSWER["answer"]
 
@@ -1887,7 +1890,7 @@ def test_a_runs_representation_names_no_server_header_or_masked_value(
     client: TestClient, cap: dict[str, Any]
 ):
     """A run on a stored server, under a config file where the server runs whose
-    params, as r3con's own config params may, carry another server and a header, which
+    params, as r3trace's own config params may, carry another server and a header, which
     a cap is sent beside."""
     with_config_params(
         {"api_base": SECOND_ENDPOINT, "extra_headers": {"X-Gateway-Key": GATE_KEY}}
@@ -1956,7 +1959,7 @@ def test_an_imported_run_keeps_no_param_override_or_other_field_of_its_manifest(
     assert sorted(manifest) == [
         "config",
         "litellm_model",
-        "r3con_version",
+        "r3trace_version",
         "run_folder",
         "task",
     ]
@@ -2032,7 +2035,7 @@ def renamed_first_id(files: dict[str, Any]) -> None:
         "unknown-snippet-id",
     ],
 )
-def test_an_import_not_a_run_r3con_can_ask_is_refused_plainly_and_writes_nothing(
+def test_an_import_not_a_run_r3trace_can_ask_is_refused_plainly_and_writes_nothing(
     client: TestClient,
     logs_dir: Path,
     caplog: pytest.LogCaptureFixture,
@@ -2042,9 +2045,9 @@ def test_an_import_not_a_run_r3con_can_ask_is_refused_plainly_and_writes_nothing
     saved = representation_of(client, finished_run(client))
     before = run_folders(logs_dir)
     damage(saved)
-    with caplog.at_level(logging.WARNING, logger="r3con.app"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.app"):
         response = client.post(IMPORTS, json=saved)
-    said = [r.getMessage() for r in caplog.records if r.name == "r3con.app"]
+    said = [r.getMessage() for r in caplog.records if r.name == "r3trace.app"]
     assert (response.status_code, response.json()) == (
         422,
         {"error": UNREADABLE_IMPORT},
@@ -2058,9 +2061,9 @@ def test_a_refused_imports_log_line_keeps_a_key_from_the_file_on_one_line(
 ):
     saved = representation_of(client, finished_run(client))
     saved["ids.json"] = {"x\nFAKE warning line": "no"}
-    with caplog.at_level(logging.WARNING, logger="r3con.app"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.app"):
         client.post(IMPORTS, json=saved)
-    said = [r.getMessage() for r in caplog.records if r.name == "r3con.app"]
+    said = [r.getMessage() for r in caplog.records if r.name == "r3trace.app"]
     assert len(said) == 1 and "\n" not in said[0]
     assert "x\\nFAKE warning line" in said[0]
 
@@ -2073,10 +2076,10 @@ def test_an_import_whose_folder_cannot_be_written_is_refused_and_logged(
     taken.write_text("a file where the logs dir would be")
     with (
         client_for(llm, taken) as elsewhere,
-        caplog.at_level(logging.WARNING, logger="r3con.app"),
+        caplog.at_level(logging.WARNING, logger="r3trace.app"),
     ):
         response = elsewhere.post(IMPORTS, json=saved)
-    logged = [r.getMessage() for r in caplog.records if r.name == "r3con.app"]
+    logged = [r.getMessage() for r in caplog.records if r.name == "r3trace.app"]
     assert (response.status_code, response.json()) == (
         500,
         {"error": UNWRITABLE_IMPORT},
@@ -2133,9 +2136,9 @@ def test_the_representation_of_a_run_folder_with_a_file_it_cannot_read_is_refuse
     run_id = finished_run(client)
     run_dir = Path(run_events(client, run_id)[0]["run_dir"])
     damage(run_dir / path)
-    with caplog.at_level(logging.WARNING, logger="r3con.app"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.app"):
         response = client.get(f"/api/runs/{run_id}/representation")
-    logged = [r.getMessage() for r in caplog.records if r.name == "r3con.app"]
+    logged = [r.getMessage() for r in caplog.records if r.name == "r3trace.app"]
     assert response.status_code == 409
     assert response.json() == {"error": UNREADABLE_RUN}
     assert logged == [f"{run_dir}: can't read it to save ({error})"]
@@ -2241,10 +2244,10 @@ def test_a_save_where_the_file_cannot_be_written_is_refused_and_logged(
     (tmp_path / "folder" / "kept.txt").write_text("kept")
     with (
         client_for(llm, logs_dir, FakeSaveDialog(tmp_path / chosen)) as client,
-        caplog.at_level(logging.WARNING, logger="r3con.app"),
+        caplog.at_level(logging.WARNING, logger="r3trace.app"),
     ):
         response = save(client)
-    logged = [r.getMessage() for r in caplog.records if r.name == "r3con.app"]
+    logged = [r.getMessage() for r in caplog.records if r.name == "r3trace.app"]
     assert response.status_code == 500
     assert response.json() == {"error": UNWRITABLE_SAVE}
     assert logged == [f"{tmp_path / chosen}: a saved tab isn't written ({error})"]
@@ -2272,10 +2275,10 @@ def test_the_servers_url_opens_its_page_with_its_token_alone(
     assert re.fullmatch(r"http://127\.0\.0\.1:\d+/#token=[\w-]+", url)
 
 
-def test_a_run_r3con_refuses_before_it_starts_ends_its_stream_and_cannot_be_asked(
+def test_a_run_r3trace_refuses_before_it_starts_ends_its_stream_and_cannot_be_asked(
     client: TestClient, llm: FakeLLM, monkeypatch: pytest.MonkeyPatch
 ):
-    monkeypatch.setattr("r3con.settings.REASONING_MAX_TURNS", 0)
+    monkeypatch.setattr("r3trace.settings.REASONING_MAX_TURNS", 0)
     run_id = start_run(client)
     events = run_events(client, run_id)
     assert [(event["type"], event["stage"]) for event in events] == [
@@ -2397,7 +2400,7 @@ def test_a_word_files_or_web_pages_text_is_extracted_as_read_documents_extracts_
     assert response.json() == {"text": text, "reason": None}
 
 
-def test_the_page_sends_the_server_each_suffix_r3con_extracts():
+def test_the_page_sends_the_server_each_suffix_r3trace_extracts():
     script = (APP_DIR / "app.js").read_text(encoding="utf-8")
     listed = re.search(r"const EXTRACTED_SUFFIXES = \[(.*?)\];", script)
     assert listed is not None
@@ -2482,13 +2485,13 @@ def test_a_file_with_no_text_or_unreadable_has_empty_text_is_logged_and_a_pdf_sa
 ):
     file = tmp_path / name
     write(file)
-    with caplog.at_level(logging.WARNING, logger="r3con.documents"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.documents"):
         response = text_of(client, file)
     assert response.status_code == 200
     assert response.json() == {"text": "", "reason": reason}
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        logged
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [logged]
 
 
 @pytest.mark.parametrize(
@@ -2677,11 +2680,11 @@ def test_a_corrupt_zip_is_refused_saying_so_and_logged(
     damage: Callable[[bytes], bytes],
 ):
     body = damage(zipped(tmp_path, LONG_MEMO).read_bytes())
-    with caplog.at_level(logging.WARNING, logger="r3con.app"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.app"):
         response = unzip(client, body)
     assert response.status_code == 422
     assert response.json() == {"error": UNREADABLE_ZIP}
-    [logged] = [r.getMessage() for r in caplog.records if r.name == "r3con.app"]
+    [logged] = [r.getMessage() for r in caplog.records if r.name == "r3trace.app"]
     assert logged.startswith(f"{ZIP_NAME}: not a readable zip (")
 
 
@@ -2816,7 +2819,7 @@ def test_a_cancelled_run_sends_no_further_call_and_its_stream_ends_with_run_fail
     held_llm: FakeLLM, logs_dir: Path, caplog: pytest.LogCaptureFixture
 ):
     with (
-        caplog.at_level(logging.INFO, logger="r3con.app"),
+        caplog.at_level(logging.INFO, logger="r3trace.app"),
         client_for(held_llm, logs_dir) as client,
     ):
         run_id = start_run(client)
@@ -2831,7 +2834,7 @@ def test_a_cancelled_run_sends_no_further_call_and_its_stream_ends_with_run_fail
     assert (last["type"], last["stage"]) == ("run_failed", "relevance")
     assert last["error"].startswith("Cancelled: ")
     logged = [
-        (r.levelno, r.getMessage()) for r in caplog.records if r.name == "r3con.app"
+        (r.levelno, r.getMessage()) for r in caplog.records if r.name == "r3trace.app"
     ]
     assert logged == [(logging.INFO, f"run_failed: {last['error']}")]
 

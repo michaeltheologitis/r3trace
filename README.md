@@ -1,16 +1,16 @@
 
-# R3Con
+# R3Trace
 
 [![arXiv](https://img.shields.io/badge/arXiv-2609.27173-b31b1b.svg)](https://arxiv.org/abs/2609.27173)
 ![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue)
-[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/michaeltheologitis/r3con/blob/main/LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/michaeltheologitis/r3trace/blob/main/LICENSE)
 
 **Context representation for large-scale reasoning with smaller, cheaper models.**
 
-Ask a question whose evidence is spread across many documents. R3Con finds and
+Ask a question whose evidence is spread across many documents. R3Trace finds and
 organizes the relevant information, then reasons over it to produce an answer.
 
-![R3Con's Mac app, in real time: a folder holding a spreadsheet, three PDFs and a Word file is dropped on the panel and shows as a file tree, then a loose inspection schedule is dropped beside it; a run asks which site logged the most equipment incidents, who maintains it and when its next inspection is, and the answer lights its trail through the tree; once its sentences are linked to their evidence, hovering each sentence draws its own path in blue over the lit trail, clicking the second lists its three quotes from three documents, and a quote opens the Riverside PDF with it marked](https://raw.githubusercontent.com/michaeltheologitis/r3con/main/docs/demo.gif)
+![R3Trace's Mac app, in real time: a folder holding a spreadsheet, three PDFs and a Word file is dropped on the panel and shows as a file tree, then a loose inspection schedule is dropped beside it; a run asks which site logged the most equipment incidents, who maintains it and when its next inspection is, and the answer lights its trail through the tree; once its sentences are linked to their evidence, hovering each sentence draws its own path in blue over the lit trail, clicking the second lists its three quotes from three documents, and a quote opens the Riverside PDF with it marked](https://raw.githubusercontent.com/michaeltheologitis/r3trace/main/docs/demo.gif)
 
 ## App
 
@@ -18,18 +18,18 @@ organizes the relevant information, then reasons over it to produce an answer.
 
 #### Direct
 
-[Download R3Con](https://github.com/michaeltheologitis/r3con/releases/latest/download/R3Con.dmg), double-click it, and drag R3Con to Applications.
+[Download R3Trace](https://github.com/michaeltheologitis/r3trace/releases/latest/download/R3Trace.dmg), double-click it, and drag R3Trace to Applications.
 
-<img src="https://raw.githubusercontent.com/michaeltheologitis/r3con/main/docs/install.png" width="480" alt="The R3Con disk image window: drag R3Con onto the Applications folder">
+<img src="https://raw.githubusercontent.com/michaeltheologitis/r3trace/main/docs/install.png" width="480" alt="The R3Trace disk image window: drag R3Trace onto the Applications folder">
 
 
 #### Brew
 
 ```bash
-brew install michaeltheologitis/r3con/r3con
+brew install michaeltheologitis/r3trace/r3trace
 ```
 
-Either way, R3Con updates itself: **R3Con → Check for Updates…**
+Either way, R3Trace updates itself: **R3Trace → Check for Updates…**
 
 ### Any computer
 
@@ -39,14 +39,14 @@ First install uv:
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Run R3Con in your browser:
+Run R3Trace in your browser:
 
 ```bash
-uv tool install --python 3.15 "r3context[app]"
+uv tool install --python 3.15 "r3trace[app]"
 ```
 
 ```bash
-r3con app
+r3trace app
 ```
 
 ## Library
@@ -54,10 +54,10 @@ r3con app
 ### Install
 
 ```bash
-pip install r3context
+pip install r3trace
 ```
 
-Or `uv add r3context`.
+Or `uv add r3trace`.
 
 Set the API key(s) for the AI provider(s) you use:
 
@@ -73,7 +73,7 @@ You can also put them in a `.env` file in your working directory.
 Ask a question about documents in a folder:
 
 ```bash
-r3con run "Which supplier missed the most delivery windows?" ./reports \
+r3trace run "Which supplier missed the most delivery windows?" ./reports \
   --model openai/gpt-6-luna
 ```
 
@@ -97,20 +97,20 @@ include subfolders.
 
 ```bash
 # All supported files in reports and its subfolders
-r3con run "Who approved the Q3 overspend?" ./reports
+r3trace run "Who approved the Q3 overspend?" ./reports
 
 # Only PDF files directly inside reports
-r3con run "Who approved the Q3 overspend?" "./reports/*.pdf"
+r3trace run "Who approved the Q3 overspend?" "./reports/*.pdf"
 
 # PDF files inside reports and its subfolders
-r3con run "Who approved the Q3 overspend?" "./reports/**/*.pdf"
+r3trace run "Who approved the Q3 overspend?" "./reports/**/*.pdf"
 
 # Only these three files
-r3con run "Who approved the Q3 overspend?" q1.md q2.md q3.md
+r3trace run "Who approved the Q3 overspend?" q1.md q2.md q3.md
 ```
 
 Keep glob patterns in quotes, as shown above. When reading a folder or using
-a glob pattern, R3Con skips links to files outside the selected folder.
+a glob pattern, R3Trace skips links to files outside the selected folder.
 Individual files can be specified directly.
 
 Add `--evidence-level document` to skip quoting sentences: the answer's
@@ -121,7 +121,7 @@ provenance then lists only its documents.
 If a run fails or you stop it partway, it prints the command that carries it on:
 
 ```bash
-r3con resume logs/20261105T173546Z_bb4f0c37 ./reports
+r3trace resume logs/20261105T173546Z_bb4f0c37 ./reports
 ```
 
 Give it the same sources the run read, in the same order. It reuses what the run
@@ -132,10 +132,10 @@ finished and only does the rest.
 Load documents from a folder, glob pattern, or list of files:
 
 ```python
-from r3con import r3con
+from r3trace import r3trace
 
-docs = r3con.read_documents("./reports")
-result = r3con.run(
+docs = r3trace.read_documents("./reports")
+result = r3trace.run(
     "Which supplier missed the most delivery windows?",
     docs,
 )
@@ -155,7 +155,7 @@ If your documents are already stored as text in Python, pass them directly
 without reading files:
 
 ```python
-result = r3con.run(
+result = r3trace.run(
     "Which supplier missed the most delivery windows?",
     [doc_a, doc_b, doc_c],
 )
@@ -180,24 +180,24 @@ documents = {
 To skip quoting, run at the document level:
 
 ```python
-result = r3con.run(
+result = r3trace.run(
     "Which supplier missed the most delivery windows?",
     docs,
     evidence_level="document",
 )
 ```
 
-R3Con then doesn't ask the model for quotes, so the provenance lists only
+R3Trace then doesn't ask the model for quotes, so the provenance lists only
 documents (`result.provenance["relevant_trail"]["documents"]`), not their
 sentences.
 
 #### Re-use Representation
 
 To ask another question without repeating the earlier processing, use
-`r3con.ask`:
+`r3trace.ask`:
 
 ```python
-other = r3con.ask(result, "Which supplier delivered on time most often?")
+other = r3trace.ask(result, "Which supplier delivered on time most often?")
 print(other)
 ```
 
@@ -207,11 +207,11 @@ repeats the final reasoning step.
 #### Resume a Run
 
 If a run fails or is stopped partway, for example by a rate limit or a lost
-connection, `r3con.resume` carries it on from where it was, in the same folder.
+connection, `r3trace.resume` carries it on from where it was, in the same folder.
 Give it the run's folder (the error names it) and the same documents:
 
 ```python
-result = r3con.resume("logs/20261105T173546Z_bb4f0c37", docs)
+result = r3trace.resume("logs/20261105T173546Z_bb4f0c37", docs)
 ```
 
 It checks that the documents are the run's, reuses each result the run had
@@ -274,7 +274,7 @@ evidence = result.provenance["evidence_trail"]
 print(evidence["from"], [document["name"] for document in evidence["documents"]])
 ```
 
-[`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/provenance.ipynb)
+[`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3trace/blob/main/examples/provenance.ipynb)
 shows the rest of the provenance.
 
 ## Notebooks
@@ -282,14 +282,14 @@ shows the rest of the provenance.
 The examples use five short memos, with the information spread across them
 so no single document contains the complete answer:
 
-- [`examples/quickstart.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/quickstart.ipynb) — a complete example of using R3Con.
-- [`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/provenance.ipynb) — checking the original sentences, summaries, and records behind an answer.
-- [`examples/options.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/options.ipynb) — configuring models, summary rounds, reasoning, generation settings, custom connections, and saved files.
-- [`examples/vllm.ipynb`](https://github.com/michaeltheologitis/r3con/blob/main/examples/vllm.ipynb) — using an AI model hosted on your own vLLM server.
+- [`examples/quickstart.ipynb`](https://github.com/michaeltheologitis/r3trace/blob/main/examples/quickstart.ipynb) — a complete example of using R3Trace.
+- [`examples/provenance.ipynb`](https://github.com/michaeltheologitis/r3trace/blob/main/examples/provenance.ipynb) — checking the original sentences, summaries, and records behind an answer.
+- [`examples/options.ipynb`](https://github.com/michaeltheologitis/r3trace/blob/main/examples/options.ipynb) — configuring models, summary rounds, reasoning, generation settings, custom connections, and saved files.
+- [`examples/vllm.ipynb`](https://github.com/michaeltheologitis/r3trace/blob/main/examples/vllm.ipynb) — using an AI model hosted on your own vLLM server.
 
 ## Output
 
-`r3con.run(...)` returns the answer and the information created during the run:
+`r3trace.run(...)` returns the answer and the information created during the run:
 
 ```python
 result.answer  # Final answer
@@ -303,7 +303,7 @@ result.skipped  # What the run skipped, and why
 When the AI model's reply for one document stays unusable after its retries
 (cut off at its output limit, not fitting the requested format, or empty),
 the run skips that document's relevance note or parsed records and carries on
-rather than failing. `result.skipped` lists each skip, `r3con run` prints a
+rather than failing. `result.skipped` lists each skip, `r3trace run` prints a
 line about them after the answer, and the run folder's `skipped.json` has
 the details.
 
@@ -348,10 +348,10 @@ see [r3con-evaluation](https://github.com/michaeltheologitis/r3con-evaluation).
 
 ## License
 
-MIT — see [LICENSE](https://github.com/michaeltheologitis/r3con/blob/main/LICENSE).
+MIT — see [LICENSE](https://github.com/michaeltheologitis/r3trace/blob/main/LICENSE).
 
-`src/r3con/runtime/python_executor.py` includes modified code from
+`src/r3trace/runtime/python_executor.py` includes modified code from
 [smolagents](https://github.com/huggingface/smolagents), licensed under
 Apache-2.0 and © HuggingFace Inc.
 
-See [THIRD-PARTY-NOTICES](https://github.com/michaeltheologitis/r3con/blob/main/THIRD-PARTY-NOTICES).
+See [THIRD-PARTY-NOTICES](https://github.com/michaeltheologitis/r3trace/blob/main/THIRD-PARTY-NOTICES).

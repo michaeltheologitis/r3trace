@@ -1,4 +1,4 @@
-"""The Mac app's window (r3con.app.window), with Toga faked at the screen."""
+"""The Mac app's window (r3trace.app.window), with Toga faked at the screen."""
 
 import asyncio
 import json
@@ -7,6 +7,7 @@ import runpy
 import sys
 import threading
 import time
+import tomllib
 from collections.abc import Callable, Iterator
 from functools import partial
 from pathlib import Path
@@ -19,8 +20,8 @@ import pytest
 import toga
 from toga.constants import WindowState
 
-from r3con.app import updates, window
-from r3con.app.server import APP_KEY_SERVICE, MAC_APP_KEY_SERVICE, listen, serve
+from r3trace.app import updates, window
+from r3trace.app.server import APP_KEY_SERVICE, MAC_APP_KEY_SERVICE, listen, serve
 from tests.fakes import (
     GATE_TIMEOUT_SECONDS,
     FakeCommand,
@@ -33,10 +34,11 @@ from tests.fakes import (
 )
 
 pytestmark = [pytest.mark.enable_socket, pytest.mark.allow_hosts(["127.0.0.1"])]
+PYPROJECT = Path(__file__).parents[2] / "pyproject.toml"
 TIMEOUT_SECONDS = 10
 TOGA_WINDOW_SIZE = (640, 480)
 MAC_APP_KEY = "sk-saved-by-the-mac-app-1234"
-R3CON_APP_KEY = "sk-saved-by-r3con-app-5678"
+R3TRACE_APP_KEY = "sk-saved-by-r3trace-app-5678"
 SAVED_NAME = "which-site-logged-the-most-incidents.html"
 CHOSEN_NAME = "chosen.html"
 SAVED_TAB = b"<!doctype html><title>a saved tab</title>"
@@ -71,7 +73,7 @@ WINDOW_THREAD = "window"
 class FakeWebView:
     """Toga's web view: it keeps the scripts it is asked to run, in ``scripts``, and
     answers the window's query of the page's controls with ``controls``, or, for a
-    page that isn't R3Con's, None."""
+    page that isn't R3Trace's, None."""
 
     controls: tuple[tuple[float, ...], ...] | None = (SETTINGS, THEME)
 
@@ -199,8 +201,15 @@ class FakeApp:
     exits: list[int]
 
     def __init__(
-        self, *, startup: Callable[..., FakeWebView], on_exit: Callable[..., bool]
+        self,
+        *,
+        formal_name: str,
+        app_id: str,
+        app_name: str,
+        startup: Callable[..., FakeWebView],
+        on_exit: Callable[..., bool],
     ) -> None:
+        self.named = (formal_name, app_id, app_name)
         self.startup = startup
         self.on_exit = on_exit
         self.main_window = FakeWindow()
@@ -336,14 +345,14 @@ def test_a_launch_whose_port_another_program_has_serves_on_a_free_one(
     assert (app.page.status_code, app.keys.status_code) == (200, 200)
 
 
-def test_the_mac_app_keeps_its_keys_under_its_bundle_id_never_r3con_apps(
+def test_the_mac_app_keeps_its_keys_under_its_bundle_id_never_r3trace_apps(
     opened: list[FakeApp],
     credential_store: FakeKeyring,
     monkeypatch: pytest.MonkeyPatch,
 ):
     assert MAC_APP_KEY_SERVICE == "io.github.michaeltheologitis.r3con"
     credential_store.passwords[MAC_APP_KEY_SERVICE, "openai"] = MAC_APP_KEY
-    credential_store.passwords[APP_KEY_SERVICE, "gemini"] = R3CON_APP_KEY
+    credential_store.passwords[APP_KEY_SERVICE, "gemini"] = R3TRACE_APP_KEY
     saving = {"provider": "anthropic", "key": MAC_APP_KEY}
     monkeypatch.setattr(FakeApp, "saving", saving)
     window.main()
@@ -353,8 +362,18 @@ def test_the_mac_app_keeps_its_keys_under_its_bundle_id_never_r3con_apps(
     assert credential_store.passwords == {
         (MAC_APP_KEY_SERVICE, "openai"): MAC_APP_KEY,
         (MAC_APP_KEY_SERVICE, "anthropic"): MAC_APP_KEY,
-        (APP_KEY_SERVICE, "gemini"): R3CON_APP_KEY,
+        (APP_KEY_SERVICE, "gemini"): R3TRACE_APP_KEY,
     }
+
+
+def test_toga_names_the_app_as_briefcase_does_with_its_bundle_id_as_its_id(
+    opened: list[FakeApp],
+):
+    config = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
+    ((name, app),) = config["tool"]["briefcase"]["app"].items()
+    window.main()
+    (opened_app,) = opened
+    assert opened_app.named == (app["formal_name"], MAC_APP_KEY_SERVICE, name)
 
 
 def test_a_mac_app_with_sparkle_checks_for_updates_from_its_app_menu(
@@ -593,7 +612,7 @@ def test_the_band_learns_the_controls_again_on_each_load_and_resize(
     assert band.controls == list(moved)
 
 
-def test_a_page_that_isnt_r3cons_has_no_controls_so_the_band_takes_no_press(
+def test_a_page_that_isnt_r3traces_has_no_controls_so_the_band_takes_no_press(
     titled: tuple[FakeWindow, FakeWebView],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -717,21 +736,22 @@ def test_quitting_with_a_model_call_in_flight_ends_the_process_without_waiting_f
     assert ended - app.quit_at < QUIT_BOUND_SECONDS < GATE_TIMEOUT_SECONDS
     assert exits == [0]
     for worker in threading.enumerate():
-        if worker.name.startswith("r3con-app-"):
+        if worker.name.startswith("r3trace-app-"):
             worker.join(TIMEOUT_SECONDS)
 
 
-def test_python_m_r3con_opens_the_window_in_the_mac_app(
+def test_python_m_r3trace_opens_the_window_in_the_mac_app(
     opened: list[FakeApp], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
-    # The distribution Briefcase writes into the Mac app, beside r3con's code.
-    dist_info = tmp_path / "app" / "r3con-0.6.10.dist-info"
+    # The distribution Briefcase writes into the Mac app, beside r3trace's code.
+    dist_info = tmp_path / "app" / "r3trace-0.6.10.dist-info"
     dist_info.mkdir(parents=True)
     (dist_info / "METADATA").write_text(
-        "Metadata-Version: 2.1\nName: r3con\nVersion: 0.6.10\n"
+        "Metadata-Version: 2.1\nName: r3trace\nVersion: 0.6.10\n"
     )
+    (dist_info / "INSTALLER").write_text("briefcase\n")
     monkeypatch.syspath_prepend(tmp_path / "app")
-    runpy.run_module("r3con", run_name="__main__")
+    runpy.run_module("r3trace", run_name="__main__")
     (app,) = opened
     assert app.page.status_code == 200
 

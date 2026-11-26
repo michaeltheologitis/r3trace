@@ -5,7 +5,7 @@ name: Mac app
 on:
   pull_request:
     paths:
-      - "src/r3con/**"
+      - "src/r3trace/**"
       - "icons/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -56,6 +56,10 @@ env:
   WHEELS: build/wheels
   # The bundle's own Python, in the app.
   APP_PYTHON: Contents/Frameworks/Python.framework/Versions/3.14/bin/python3
+  # The app's bundle identifier, r3con's from before the rename, never Briefcase's
+  # from the app's name: its Keychain service (MAC_APP_KEY_SERVICE, which
+  # bundle_check.py holds it to) and where WebKit keeps the page's settings.
+  BUNDLE_ID: io.github.michaeltheologitis.r3con
 
 jobs:
   app:
@@ -94,13 +98,15 @@ jobs:
       - name: Download the bundle's wheels, by uv.lock's hashes
         run: '"$RUNNER_TEMP/briefcase/bin/python" -m pip download --require-hashes --only-binary :all: --no-deps --platform macosx_11_0_arm64 --dest "$WHEELS" -r "$CONSTRAINTS" -r "$BUILD_CONSTRAINTS"'
       # Its CFBundleVersion, which Sparkle compares with the feed's to find a newer
-      # release, is the project's version, not Briefcase's default, 1.
+      # release, is the project's version, not Briefcase's default, 1. Its bundle
+      # identifier is set before signing, which seals Info.plist.
       - name: Build the app
         id: build
         run: |
           version=$(uv version --short)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           "$RUNNER_TEMP/briefcase/bin/briefcase" build macOS app --config "build='$version'" --no-input
+          plutil -replace CFBundleIdentifier -string "$BUNDLE_ID" "$(echo build/r3trace/macos/app/*.app)/Contents/Info.plist"
       - uses: ./.github/actions/sparkle
         id: sparkle
       # Before the app is signed. It isn't sandboxed, so it enables none of Sparkle's XPC
@@ -112,13 +118,13 @@ jobs:
           framework="$SPARKLE/Sparkle.framework"
           rm -r "$framework/XPCServices" "$framework/Versions/B/XPCServices"
           cp "$SPARKLE/LICENSE" "$framework/Versions/B/Resources/LICENSE"
-          ditto "$framework" "$(echo build/r3con/macos/app/*.app)/Contents/Frameworks/Sparkle.framework"
+          ditto "$framework" "$(echo build/r3trace/macos/app/*.app)/Contents/Frameworks/Sparkle.framework"
       # So that a run without SPARKLE_PRIVATE_KEY makes and checks its feed as a release
       # does; before signing, which seals Info.plist.
       - name: Make a throwaway update key for the app
         if: ${{ !inputs.sign }}
         run: |
-          app=$(echo build/r3con/macos/app/*.app)
+          app=$(echo build/r3trace/macos/app/*.app)
           umask 077
           public=$("$app/$APP_PYTHON" -I -B -c '
           import site, sys
@@ -177,7 +183,7 @@ jobs:
           APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
           APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
-        run: .github/notarize.sh dist/*.app.zip build/r3con/macos/app/*.app
+        run: .github/notarize.sh dist/*.app.zip build/r3trace/macos/app/*.app
       # Briefcase signs the app again before packing it, which would invalidate its ticket.
       - name: Pack the app into a signed .dmg
         if: inputs.sign
@@ -201,8 +207,8 @@ jobs:
             security delete-keychain "$RUNNER_TEMP/signing.keychain-db"
           fi
       # The asset name the feed's download URL ends with; a rename keeps signature and ticket.
-      - name: Name the .dmg R3Con.dmg
-        run: mv dist/R3Con-*.dmg dist/R3Con.dmg
+      - name: Name the .dmg R3Trace.dmg
+        run: mv dist/R3Trace-*.dmg dist/R3Trace.dmg
       # generate_appcast signs the .dmg only if the app's SUPublicEDKey is the key's public
       # half, and else just warns (generate_appcast/Appcast.swift): its edSignature and
       # sign_update's check of the feed show both are signed by the key the app trusts.
@@ -230,10 +236,10 @@ jobs:
           feed="$RUNNER_TEMP/feed"
           # The .dmg alone: one update, no deltas.
           mkdir "$feed"
-          cp -c dist/R3Con.dmg "$feed/"
+          cp -c dist/R3Trace.dmg "$feed/"
           # Empty notes, as from a body of only trailers: no file, so the update has none.
           if [ -n "$NOTES" ]; then
-            printf '%s\n' "$NOTES" > "$feed/R3Con.md"
+            printf '%s\n' "$NOTES" > "$feed/R3Trace.md"
           fi
           printf '%s\n' "$key" | "$SPARKLE/bin/generate_appcast" --ed-key-file - --download-url-prefix "$DOWNLOADS" --embed-release-notes -o dist/appcast.xml "$feed"
           printf '%s\n' "$key" | "$SPARKLE/bin/sign_update" --verify --ed-key-file - dist/appcast.xml
@@ -246,9 +252,9 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/dmg" "$HOME/Applications"
           hdiutil attach dist/*.dmg -readonly -nobrowse -mountpoint "$RUNNER_TEMP/dmg"
-          ditto "$RUNNER_TEMP/dmg/R3Con.app" "$HOME/Applications/R3Con.app"
+          ditto "$RUNNER_TEMP/dmg/R3Trace.app" "$HOME/Applications/R3Trace.app"
           hdiutil detach "$RUNNER_TEMP/dmg"
-          echo "APP=$HOME/Applications/R3Con.app" >> "$GITHUB_ENV"
+          echo "APP=$HOME/Applications/R3Trace.app" >> "$GITHUB_ENV"
       - name: Check the app's signature
         run: |
           codesign --display --verbose=2 "$APP" 2>&1 | grep -E '^(Authority|Signature|Timestamp|TeamIdentifier)=|flags=' | tee "$RUNNER_TEMP/codesign.txt"
@@ -272,17 +278,17 @@ jobs:
         timeout-minutes: 10
         run: '"$APP/$APP_PYTHON" -I -B tests/app/bundle_check.py "$APP" "$CONSTRAINTS" "$BUILD_CONSTRAINTS"'
       # Without its icon, Briefcase falls back to its placeholder and only says so.
-      - name: Check that the app's icon is icons/r3con.icns
-        run: cmp icons/r3con.icns "$APP/Contents/Resources/$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")"
+      - name: Check that the app's icon is icons/r3trace.icns
+        run: cmp icons/r3trace.icns "$APP/Contents/Resources/$(plutil -extract CFBundleIconFile raw "$APP/Contents/Info.plist")"
       # At INFO, so that the log shows Sparkle's updater started. Briefcase's stub sends
-      # Python's stdout and stderr, where uvicorn logs each request and r3con its lines,
+      # Python's stdout and stderr, where uvicorn logs each request and r3trace its lines,
       # to the system log, which at times can't show them: "<compose failure [UUID]>".
       # OS_ACTIVITY_DT_MODE has the app also write each line it logs to its own stderr,
       # here app.log.
       - name: Open the app's window
         run: |
           app_log="$RUNNER_TEMP/app.log"
-          R3CON_LOG_LEVEL=INFO OS_ACTIVITY_DT_MODE=YES "$APP/Contents/MacOS/R3Con" > "$app_log" 2>&1 &
+          R3TRACE_LOG_LEVEL=INFO OS_ACTIVITY_DT_MODE=YES "$APP/Contents/MacOS/R3Trace" > "$app_log" 2>&1 &
           pid=$!
           port=
           for _ in $(seq 60); do
@@ -299,7 +305,7 @@ jobs:
           import site, sys
           sys.path.append(sys.argv[1])
           site.addsitedir(sys.argv[2])
-          from r3con.app.window import PORT
+          from r3trace.app.window import PORT
           print(PORT)
           ' "$APP/Contents/Resources/app" "$APP/Contents/Resources/app_packages")
           if [ "$port" != "$own" ]; then
@@ -317,7 +323,7 @@ jobs:
             echo "::error::The window's page never asked the server for /api/keys with the token."
             exit 1
           fi
-          # Before the page loads: Sparkle's error when its updater can't start, then r3con's line.
+          # Before the page loads: Sparkle's error when its updater can't start, then r3trace's line.
           if ! grep -F "Sparkle's updater started" "$app_log" || grep -F 'Fatal updater error' "$app_log"; then
             echo "::error::The app didn't start Sparkle's updater."
             exit 1
@@ -356,7 +362,7 @@ jobs:
       - name: Open the app again and again with the pointer on its top row
         timeout-minutes: 10
         run: |
-          defaults write io.github.michaeltheologitis.r3con SUEnableAutomaticChecks -bool false
+          defaults write "$BUNDLE_ID" SUEnableAutomaticChecks -bool false
           swift tests/app/launch_pointer_check.swift "$APP" "$RUNNER_TEMP/launches"
       # An app that writes into its own bundle breaks its signature.
       - name: Check that running the app left its signature intact
@@ -368,9 +374,9 @@ jobs:
           if [ -f "$RUNNER_TEMP/app.log" ]; then
             cat "$RUNNER_TEMP/app.log"
           fi
-          log show --last 10m --style compact --predicate 'process == "R3Con"' | tail -n 200
+          log show --last 10m --style compact --predicate 'process == "R3Trace"' | tail -n 200
           # A crash's report, with the stack it died on.
-          for report in "$HOME"/Library/Logs/DiagnosticReports/R3Con*.ips; do
+          for report in "$HOME"/Library/Logs/DiagnosticReports/R3Trace*.ips; do
             if [ -f "$report" ]; then
               echo "$report:"
               head -n 120 "$report"
@@ -411,9 +417,9 @@ jobs:
           } | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ${{ inputs.sign && 'r3con-mac-app-signed' || 'r3con-mac-app' }}
+          name: ${{ inputs.sign && 'r3trace-mac-app-signed' || 'r3trace-mac-app' }}
           path: |
-            dist/R3Con.dmg
+            dist/R3Trace.dmg
             dist/appcast.xml
           if-no-files-found: error
           retention-days: 14

@@ -5,8 +5,8 @@ from typing import Any
 
 import pytest
 
-from r3con import Answer, ask, read_documents, run
-from r3con.config import REASONING_PATHS
+from r3trace import Answer, ask, read_documents, run
+from r3trace.config import REASONING_PATHS
 from tests.fakes import cited_documents
 
 MEMOS = Path(__file__).resolve().parents[1] / "examples" / "memos"

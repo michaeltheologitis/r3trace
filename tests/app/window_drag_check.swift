@@ -1,4 +1,4 @@
-// Drags R3Con's window by its top row, then double-clicks there, with synthetic mouse events, for
+// Drags R3Trace's window by its top row, then double-clicks there, with synthetic mouse events, for
 // .github/workflows/mac-app.yml: swift tests/app/window_drag_check.swift PID
 // It fails if the window doesn't follow the drag, or doesn't zoom where a title bar double-click zooms;
 // where the runner drops synthetic events, it warns that the drag is untested. The screen may stop the
@@ -50,7 +50,7 @@ func finish(_ level: String, _ message: String, failing: Bool = false) -> Never 
 }
 
 Thread.sleep(forTimeInterval: controlsWaitSeconds)
-guard let before = windowFrame() else { finish("error", "R3Con has no window on screen.", failing: true) }
+guard let before = windowFrame() else { finish("error", "R3Trace has no window on screen.", failing: true) }
 let start = CGPoint(x: before.minX + pressAt.x, y: before.minY + pressAt.y)
 post(.mouseMoved, at: start)
 let pointer = CGEvent(source: nil)?.location ?? .zero
@@ -66,7 +66,7 @@ for step in 1...dragSteps {
 }
 post(.leftMouseUp, at: CGPoint(x: start.x + dragBy.x, y: start.y + dragBy.y))
 Thread.sleep(forTimeInterval: dragSettleSeconds)
-guard let after = windowFrame() else { finish("error", "R3Con's window is gone after a drag.", failing: true) }
+guard let after = windowFrame() else { finish("error", "R3Trace's window is gone after a drag.", failing: true) }
 let moved = CGPoint(x: after.minX - before.minX, y: after.minY - before.minY)
 print("A drag of \(dragBy) on the window's top row moved it by \(moved), from \(before) to \(after).")
 if moved.x < dragBy.x * followedShare {

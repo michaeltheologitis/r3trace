@@ -6,10 +6,10 @@ import litellm
 import pytest
 from pydantic import BaseModel, create_model
 
-from r3con.runs import TaskLogger
-from r3con.runtime.llm import litellm_chat_completion_full
-from r3con.splitting import Splits, halve
-from r3con.stages.citing import ids_field
+from r3trace.runs import TaskLogger
+from r3trace.runtime.llm import litellm_chat_completion_full
+from r3trace.splitting import Splits, halve
+from r3trace.stages.citing import ids_field
 
 MEMOS = Path(__file__).resolve().parents[1] / "examples" / "memos"
 QWEN = "hosted_vllm/Qwen/Qwen3.5-35B-A3B"
@@ -126,7 +126,7 @@ def test_the_line_is_litellms_window_less_the_margin(window):
 
 @pytest.mark.parametrize("model", [QWEN, "my-router-alias", ""])
 def test_a_model_litellm_does_not_map_has_no_window_and_no_line(model, caplog):
-    caplog.set_level(logging.INFO, logger="r3con")
+    caplog.set_level(logging.INFO, logger="r3trace")
     splits = Splits(["text"], model=model)
     assert (splits.max_input_tokens, splits.line) == (None, None)
     assert "gives no input window" in caplog.text
@@ -228,7 +228,7 @@ def test_restored_splits_keep_the_window_their_record_gives_without_a_lookup(
 ):
     read(PARAGRAPHS, Provider(), model=window(500), task_logger=logger)
     caplog.clear()
-    caplog.set_level(logging.INFO, logger="r3con")
+    caplog.set_level(logging.INFO, logger="r3trace")
     restored = Splits.restored([PARAGRAPHS], {**record(logger), "model": QWEN})
     assert (restored.max_input_tokens, restored.line) == (500, 425)
     assert caplog.text == ""
@@ -366,10 +366,10 @@ def test_splitting_stops_where_more_parts_cannot_help(
     if cause == "refusal":
         assert stop.value is provider.refusals[-1]
     else:
-        assert f"r3con estimated {call} at " in str(stop.value)
+        assert f"r3trace estimated {call} at " in str(stop.value)
     [note] = stop.value.__notes__
     assert note == (
-        "r3con: reading documents[0] (Document 1) in more parts cannot help in "
+        "r3trace: reading documents[0] (Document 1) in more parts cannot help in "
         f"{call}: {clause}. The relevant context has outgrown the model's window."
     )
     assert "TASK-" not in note
@@ -382,7 +382,7 @@ def test_the_measured_stop_says_what_was_estimated_against_which_window(window):
     with pytest.raises(litellm.ContextWindowExceededError) as stop:
         read("word " * 100, Provider(), model=model, rest=" the" * 3_500)
     assert (
-        "r3con estimated parse-d0 at 3,601 tokens, over the 3,400-token line (the "
+        "r3trace estimated parse-d0 at 3,601 tokens, over the 3,400-token line (the "
         "4,000-token input window litellm's model map gives hosted_vllm/window-4000, "
         "less 15%); it was not sent."
     ) in str(stop.value)

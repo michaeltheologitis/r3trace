@@ -1,8 +1,8 @@
-"""The vendored smolagents executor: the sandboxing r3con relies on to run
+"""The vendored smolagents executor: the sandboxing r3trace relies on to run
 model-written Python in-process.
 
 If one of these fails after a vendor update, decide deliberately: the new behaviour
-is fine for r3con, or it broke a property r3con relies on.
+is fine for r3trace, or it broke a property r3trace relies on.
 """
 
 import re
@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from r3con.runtime.python_executor import (
+from r3trace.runtime.python_executor import (
     BASE_BUILTIN_MODULES,
     ExecutionTimeoutError,
     InterpreterError,

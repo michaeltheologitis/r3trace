@@ -6,12 +6,12 @@ import jinja2
 import pytest
 import yaml
 
-from r3con import settings
-from r3con.config import EVIDENCE_LEVELS, PROMPT_STAGES, load_config
-from r3con.prompts import load_prompt, prompt_search_path
-from r3con.stages.reasoning import reason
-from r3con.stages.relevance import relevance_snippet
-from r3con.stages.structuring.parsing import check_schema, parse_one_document
+from r3trace import settings
+from r3trace.config import EVIDENCE_LEVELS, PROMPT_STAGES, load_config
+from r3trace.prompts import load_prompt, prompt_search_path
+from r3trace.stages.reasoning import reason
+from r3trace.stages.relevance import relevance_snippet
+from r3trace.stages.structuring.parsing import check_schema, parse_one_document
 from tests.fakes import asks_for_quotes
 
 MODEL = "openai/gpt-6-luna"
@@ -59,7 +59,7 @@ def stamps(parse: dict) -> set[str]:
 @pytest.fixture
 def overlay(tmp_path, monkeypatch):
     """Writes ``relevance/<version>.yaml`` files into a prompt overlay."""
-    monkeypatch.setenv("R3CON_PROMPTS_DIR", str(tmp_path / "overlay"))
+    monkeypatch.setenv("R3TRACE_PROMPTS_DIR", str(tmp_path / "overlay"))
 
     def write(version: str, text: str) -> None:
         path = tmp_path / "overlay" / "relevance" / f"{version}.yaml"
@@ -265,7 +265,7 @@ def test_each_coding_example_runs_and_commits_ids_it_shows(llm, example):
 
 
 def test_the_overlay_is_searched_before_the_package(tmp_path, monkeypatch):
-    monkeypatch.setenv("R3CON_PROMPTS_DIR", str(tmp_path))
+    monkeypatch.setenv("R3TRACE_PROMPTS_DIR", str(tmp_path))
     assert prompt_search_path() == [tmp_path, settings.PROMPTS_DIR]
 
 

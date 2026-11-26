@@ -15,18 +15,18 @@ import litellm
 import pytest
 import yaml
 
-from r3con import read_documents, settings
-from r3con.config import (
+from r3trace import read_documents, settings
+from r3trace.config import (
     PROMPT_STAGES,
     REASONING_PATHS,
     RunConfig,
     load_config,
 )
-from r3con.pipeline import Skip, read_answer, run_pipeline
-from r3con.provenance import ANSWER, CITES, DEFAULT_RULE
-from r3con.runs import TaskLogger
-from r3con.stages.structuring.parsing import SchemaError
-from r3con.stages.structuring.schema import no_fields_schema
+from r3trace.pipeline import Skip, read_answer, run_pipeline
+from r3trace.provenance import ANSWER, CITES, DEFAULT_RULE
+from r3trace.runs import TaskLogger
+from r3trace.stages.structuring.parsing import SchemaError
+from r3trace.stages.structuring.schema import no_fields_schema
 from tests.fakes import (
     ANSWERING,
     MERROW_CUT_OFF,
@@ -1160,7 +1160,7 @@ def test_a_failing_stage_leaves_its_calls_and_traceback_and_names_the_run_folder
     logger = TaskLogger("run", root=tmp_path)
     with pytest.raises(litellm.APIConnectionError, match="provider down") as failure:
         answer(answering_llm.answers(**{stage: provider_down()}), logger)
-    assert failure.value.__notes__ == [f"r3con: partial artifacts in {logger.dir}"]
+    assert failure.value.__notes__ == [f"r3trace: partial artifacts in {logger.dir}"]
     folder = logger.dir / STAGE_FOLDERS[stage]
     error = (folder / "error.txt").read_text()
     assert PROVIDER_DOWN_LINE in error
@@ -1324,7 +1324,7 @@ def test_a_refused_document_is_read_in_parts_and_keeps_its_number(
 def test_identical_documents_get_distinct_ids_and_each_sees_the_others(
     answering_llm, shown_ids, monkeypatch
 ):
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "1")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "1")
     result = answer(answering_llm, documents=["Same memo"] * 3)
     ids = result.document_ids
     assert len(set(ids)) == 3
@@ -1338,7 +1338,7 @@ def test_a_relevance_attempt_cap_set_in_settings_bounds_its_resends(
     answering_llm, tmp_path, monkeypatch
 ):
     monkeypatch.setattr(settings, "RELEVANCE_MAX_ATTEMPTS", 2)
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "1")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "1")
 
     def reply(request):
         return {"provenance_ids": []} if is_later_round(request) else "A snippet."
@@ -1499,7 +1499,7 @@ def test_a_document_over_the_line_is_split_before_sending(
 def test_the_reasoning_path_changes_only_what_reasoning_sends(
     answering_llm, window, tmp_path, monkeypatch
 ):
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "1")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "1")
     documents, model = read_documents(MEMOS), window(1_000_000)
     sent = []
     for path in REASONING_PATHS:
@@ -1557,7 +1557,7 @@ def test_a_later_stage_splits_further_without_renumbering(
 def test_splitting_stops_at_the_relevant_contexts_line(
     answering_llm, window, tmp_path, monkeypatch, measured, clause
 ):
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "1")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "1")
     reports = [f"Report {i:02d}. " + ROUTINE * 5 for i in range(40)]
     llm = answering_llm.answers(relevance=(ROUTINE * 14)[:1_000])
     if not measured:
@@ -1568,12 +1568,12 @@ def test_splitting_stops_at_the_relevant_contexts_line(
         answer(llm, logger, documents=reports, model=model)
     note, folder = stop.value.__notes__
     assert note.startswith(
-        "r3con: reading documents[0] (Document 1) in more parts cannot help in "
+        "r3trace: reading documents[0] (Document 1) in more parts cannot help in "
         "relevance-r2-d0: "
     )
     assert clause in note
     assert note.endswith("The relevant context has outgrown the model's window.")
-    assert folder == f"r3con: partial artifacts in {logger.dir}"
+    assert folder == f"r3trace: partial artifacts in {logger.dir}"
     assert "TASK-" not in note
     assert [user for user in users(llm) if user in reports[0]] == [reports[0]] * (
         1 if measured else 2
@@ -1689,7 +1689,7 @@ def test_a_run_reports_each_stage_and_document_from_its_start_to_its_finish(
 def test_each_finished_event_carries_what_the_run_folder_records(
     answering_llm, shown_ids, priced_model, tmp_path, monkeypatch
 ):
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "1")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "1")
     logger = TaskLogger("run", root=tmp_path)
     events = []
     llm = answering_llm.answers(
@@ -1874,7 +1874,7 @@ def test_the_callback_is_never_entered_twice_at_once(answering_llm):
 def test_a_raising_callback_is_logged_once_per_kind_of_error_and_the_run_goes_on(
     answering_llm, events_in, tmp_path, caplog
 ):
-    caplog.set_level(logging.DEBUG, logger="r3con.runs")
+    caplog.set_level(logging.DEBUG, logger="r3trace.runs")
     logger = TaskLogger("run", root=tmp_path)
 
     def on_event(event):
@@ -1897,7 +1897,7 @@ def test_a_raising_callback_is_logged_once_per_kind_of_error_and_the_run_goes_on
 def test_a_run_whose_events_file_cannot_be_written_still_finishes(
     answering_llm, tmp_path, caplog
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     logger = TaskLogger("run", root=tmp_path)
     (logger.dir / "events.jsonl").mkdir()
     events = []

@@ -3,8 +3,8 @@ import traceback
 
 import pytest
 
-from r3con.logging_setup import configure_logging, get_logger
-from r3con.masking import register_key
+from r3trace.logging_setup import configure_logging, get_logger
+from r3trace.masking import register_key
 
 KEY = "not-a-real-key-q7RkT2mXv9LpA4sW"
 
@@ -40,13 +40,13 @@ class OwnTracebacks(logging.Handler):
             self.shown.append(record.exc_text or "")
 
 
-def test_loggers_live_under_the_r3con_namespace():
-    assert get_logger().name == "r3con"
-    assert get_logger("relevance").name == "r3con.relevance"
+def test_loggers_live_under_the_r3trace_namespace():
+    assert get_logger().name == "r3trace"
+    assert get_logger("relevance").name == "r3trace.relevance"
 
 
 def test_configuring_twice_attaches_one_handler_at_the_level_asked(monkeypatch):
-    logger = logging.getLogger("r3con")
+    logger = logging.getLogger("r3trace")
     monkeypatch.setattr(logger, "handlers", [])
     configure_logging("INFO")
     configure_logging("INFO")
@@ -55,11 +55,11 @@ def test_configuring_twice_attaches_one_handler_at_the_level_asked(monkeypatch):
     assert logger.propagate is False
 
 
-def test_a_stages_records_reach_the_r3con_loggers_handlers(caplog):
-    caplog.set_level(logging.INFO, logger="r3con")
+def test_a_stages_records_reach_the_r3trace_loggers_handlers(caplog):
+    caplog.set_level(logging.INFO, logger="r3trace")
     get_logger("relevance").info("hello %d", 3)
     assert [(r.name, r.getMessage()) for r in caplog.records] == [
-        ("r3con.relevance", "hello 3")
+        ("r3trace.relevance", "hello 3")
     ]
 
 
@@ -76,20 +76,20 @@ def test_a_stages_records_reach_the_r3con_loggers_handlers(caplog):
 def test_the_log_level_variable_takes_any_case_and_spacing_and_empty_means_unset(
     monkeypatch, raw, level
 ):
-    monkeypatch.setenv("R3CON_LOG_LEVEL", raw)
+    monkeypatch.setenv("R3TRACE_LOG_LEVEL", raw)
     configure_logging()
-    assert logging.getLogger("r3con").level == level
+    assert logging.getLogger("r3trace").level == level
 
 
 def test_a_log_level_variable_that_is_not_a_level_is_refused_naming_it(monkeypatch):
-    monkeypatch.setenv("R3CON_LOG_LEVEL", "loud")
-    with pytest.raises(ValueError, match="^R3CON_LOG_LEVEL "):
+    monkeypatch.setenv("R3TRACE_LOG_LEVEL", "loud")
+    with pytest.raises(ValueError, match="^R3TRACE_LOG_LEVEL "):
         configure_logging()
 
 
 def test_a_logged_message_and_its_traceback_have_keys_masked(caplog, monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     try:
         raise RuntimeError(f"echoed {KEY}")
     except RuntimeError as error:
@@ -120,7 +120,7 @@ def test_a_handler_that_renders_tracebacks_itself_sees_the_chained_error_masked(
 
 def test_a_logged_stack_is_masked(caplog):
     register_key(KEY)
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     get_logger("llm").warning("not-a-real-key-q7RkT2mXv9LpA4sW", stack_info=True)
     assert "Stack (most recent call last)" in caplog.text
     assert KEY not in caplog.text
@@ -138,6 +138,6 @@ def test_a_logged_stack_is_masked(caplog):
 def test_a_log_call_whose_message_does_not_format_returns_and_logs_its_parts(
     caplog, message, argument, logged
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     get_logger("llm").warning(message, argument)
     assert caplog.messages == [logged]

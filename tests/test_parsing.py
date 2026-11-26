@@ -8,10 +8,10 @@ import litellm
 import pytest
 from pydantic import ValidationError
 
-from r3con.runs import StageRun, TaskLogger
-from r3con.runtime.llm import UnfitReply
-from r3con.splitting import Splits
-from r3con.stages.structuring.parsing import (
+from r3trace.runs import StageRun, TaskLogger
+from r3trace.runtime.llm import UnfitReply
+from r3trace.splitting import Splits
+from r3trace.stages.structuring.parsing import (
     Parsed,
     SchemaError,
     SkippedPart,
@@ -106,7 +106,7 @@ class Parse(BaseModel):
 """
 HIDES_THE_STAMP = (
     "records of Parse.memos declare their own 'document' field, whose value will hide "
-    "r3con's document stamp: those records will not trace back to the document they "
+    "r3trace's document stamp: those records will not trace back to the document they "
     "came from"
 )
 LOOKAROUNDS = ("(?=", "(?!", "(?<=", "(?<!")
@@ -341,14 +341,14 @@ def test_an_unusable_schema_is_refused_with_what_to_fix(code, error):
 
 
 def test_a_schema_whose_records_declare_document_is_accepted_with_one_warning(caplog):
-    caplog.set_level(logging.WARNING, logger="r3con.structuring.parsing")
+    caplog.set_level(logging.WARNING, logger="r3trace.structuring.parsing")
     parse_cls = check_schema(DOCUMENT_FIELD)
     assert list(parse_cls.model_fields) == ["memos"]
     assert caplog.messages == [HIDES_THE_STAMP]
 
 
 def test_a_schema_whose_records_leave_document_free_logs_nothing(caplog):
-    caplog.set_level(logging.WARNING, logger="r3con.structuring.parsing")
+    caplog.set_level(logging.WARNING, logger="r3trace.structuring.parsing")
     check_schema(SCHEMA)
     assert caplog.messages == []
 
@@ -408,7 +408,9 @@ def test_a_decorated_method_is_refused_with_what_to_do_instead(method, listed):
         + textwrap.indent(textwrap.dedent(method), "    ")
         + "\nclass Parse(BaseModel):\n    rows: list[Row]\n"
     )
-    with pytest.raises(SchemaError, match="decorators, which r3con does not run") as no:
+    with pytest.raises(
+        SchemaError, match="decorators, which r3trace does not run"
+    ) as no:
         check_schema(code)
     assert all(entry in str(no.value) for entry in listed)
     assert "Field(ge=0)" in str(no.value)
@@ -521,7 +523,7 @@ def test_with_no_note_to_cite_provenance_is_any_list_and_what_it_holds_is_droppe
     llm, snippets, caplog
 ):
     llm.answers(parsing={"parse": {"rows": []}, "provenance_ids": ["0f0f0f"]})
-    with caplog.at_level(logging.WARNING, logger="r3con"):
+    with caplog.at_level(logging.WARNING, logger="r3trace"):
         result = parse_all(llm, DOCS, relevance_snippets=snippets, workers=3)
     assert result.provenance == [[], [], []]
     assert "did not show: ['0f0f0f']" in caplog.text
@@ -573,7 +575,7 @@ def test_document_ids_that_are_not_one_per_document_are_refused_before_any_reque
 
 def test_an_empty_notes_id_is_shown_but_cannot_be_cited(llm, caplog):
     reply = {"parse": {"rows": []}, "provenance_ids": [IDS[1]]}
-    with caplog.at_level(logging.WARNING, logger="r3con"):
+    with caplog.at_level(logging.WARNING, logger="r3trace"):
         _, provenance = parse_one(
             llm.replies(reply),
             relevance_snippets=["Doc A is about whales.", ""],
@@ -601,7 +603,7 @@ def test_each_documents_provenance_is_recorded_aligned_with_the_documents(llm):
 
 def test_a_cited_id_the_call_did_not_show_is_dropped_with_a_warning(llm, caplog):
     reply = {"parse": {"rows": []}, "provenance_ids": ["0f0f0f", IDS[0]]}
-    with caplog.at_level(logging.WARNING, logger="r3con"):
+    with caplog.at_level(logging.WARNING, logger="r3trace"):
         _, provenance = parse_one(
             llm.replies(reply),
             relevance_snippets=NOTES,
@@ -712,7 +714,7 @@ def unusable_for(text: str, unusable, otherwise=a_row_named_by_the_first_word):
 def test_a_document_whose_reply_stays_unusable_is_skipped_with_no_records(
     llm, caplog, unusable, reason, error, sends
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.structuring.parsing")
+    caplog.set_level(logging.WARNING, logger="r3trace.structuring.parsing")
     events = []
     llm.answers(parsing=unusable_for("Beta", unusable))
     result = parse_all(
@@ -748,7 +750,7 @@ def test_a_saved_parse_keeps_its_skipped_parts_and_is_not_parsed_again(llm):
 
 
 def test_progress_is_logged_per_document_at_info(llm, caplog):
-    caplog.set_level(logging.INFO, logger="r3con")
+    caplog.set_level(logging.INFO, logger="r3trace")
     parse_all(llm.answers(parsing=rows_named_after_the_document), DOCS[:2], workers=1)
     assert "parse doc 1/2" in caplog.text
     assert "parse doc 2/2" in caplog.text

@@ -1,0 +1,736 @@
+/* Layout: a terminal window. The run panel (a pannable canvas) fills the left, a column on the right,
+   62ch until its edge is dragged, holds the chat and the files tab; on phones the panel stacks above
+   that column. 62ch fits the composer's widest row on one line, and the column keeps to 60% of the frame
+   as a dragged width does. */
+:root {
+  /* Light by name, not by the default normal, so each light-dark() below takes its first colour in every engine. */
+  color-scheme: light;
+  --bg: light-dark(#fcfbfa, #1a1918);
+  --panel: light-dark(#f4f2ef, #141312);
+  --fg: light-dark(#1f1e1c, #e8e5e1);
+  --dim: light-dark(#736b62, #968e84);
+  /* A folder, back and front: blue; terracotta, closed, holding the lit answer's sources; stone holding none. */
+  --folder-back: light-dark(#2f6f9f, #2d6a96);
+  --folder-front: light-dark(#6aaed6, #5a9cc6);
+  --folder-lit-back: light-dark(#93442a, #a5523a);
+  --folder-claim-back: light-dark(#1d4596, #4f7fd9);
+  --folder-unused-back: light-dark(#8a8075, #5a534c);
+  --folder-unused-front: light-dark(#b8afa4, #857c72);
+  --line: light-dark(#e5e0d9, #2e2b28);
+  --code: light-dark(#f0ece7, #232120);
+  --accent: light-dark(#c15f3c, #d77757);
+  /* Small accent text, and text on accent, at 4.5:1 or more; the accent itself falls short in light. */
+  --accent-ink: light-dark(#b65534, #d77757);
+  --mark: light-dark(rgba(193, 95, 60, 0.2), rgba(215, 119, 87, 0.24));
+  --mark-strong: light-dark(rgba(193, 95, 60, 0.38), rgba(215, 119, 87, 0.45));
+  --mark-line: var(--accent);
+  /* A lit sentence and its path, drawn over the trail; its text meets 4.5:1 on the panel. */
+  --claim: light-dark(#2459c8, #7ea6ff);
+  --claim-mark: light-dark(rgba(36, 89, 200, 0.18), rgba(126, 166, 255, 0.24));
+  --claim-mark-strong: light-dark(rgba(36, 89, 200, 0.34), rgba(126, 166, 255, 0.45));
+  --ok: light-dark(#3f7d4e, #7fb38a);
+  --err: light-dark(#b1452f, #e2806d);
+  /* A skipped call's red, apart from the accent's orange; its text at 4.5:1 or more on its tint. */
+  --alert: light-dark(#dc2626, #ef4444);
+  --alert-ink: light-dark(#b91c1c, #f87171);
+  /* How far a node fades: empty, or off the lit trail. */
+  --void-fade: 0.45;
+  --off-trail-fade: 0.3;
+  --warn: light-dark(#8f6113, #d6a54c);
+  --fill-orange: light-dark(#f27b45, #d96d3e);
+  --fill-yellow: light-dark(#f5cd55, #d8b24c);
+  --fill-blue: light-dark(#40bde8, #3aa4cd);
+  --tree-ink: light-dark(#1f1e1c, #0e0d0c);
+  --shadow: 0 10px 30px rgba(31, 30, 28, 0.12), 0 1px 3px rgba(31, 30, 28, 0.06);
+  --shadow-dark: 0 12px 34px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
+  --font: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --gutter: 16px;
+  --tab-row-height: 2.55em;
+  --icon-size: 28px;
+  --doc-icon-size: 46px;
+  /* How much wider a stack's cut-out is than its icon's strokes, in the icon's 32 units. */
+  --stack-halo: 4.2px;
+  --trash-size: 32px;
+  --trash-icon-size: 24px;
+}
+/* Dark, by the theme button: color-scheme makes each light-dark() above take its second colour, and --shadow,
+   which is not a colour, takes its dark value. */
+:root[data-theme="dark"] { color-scheme: dark; --shadow: var(--shadow-dark); }
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font: 13.5px/1.55 var(--font);
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+}
+p { margin: 0; }
+:focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+.btn {
+  font: inherit;
+  color: var(--dim);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.btn:hover { color: var(--fg); }
+.k, .dim { color: var(--dim); }
+.ok { color: var(--ok); }
+.err { color: var(--err); }
+.flag { color: var(--warn); }
+.vh {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.vh:focus-visible + label { outline: 1px solid var(--accent); outline-offset: 2px; }
+.probe { position: absolute; visibility: hidden; white-space: pre; }
+
+/* ---- frame ---- */
+.app {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding-left: max(var(--gutter), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--gutter), env(safe-area-inset-right, 0px));
+  padding-block: 0 var(--gutter);
+}
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 2ch;
+  min-width: 0;
+  padding-block: 0.65em;
+}
+.brand { color: var(--accent); font-weight: 600; white-space: nowrap; }
+.status {
+  flex: 1;
+  min-width: 0;
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.top-actions { display: flex; gap: 2ch; margin-left: auto; }
+.frame {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--side-width, min(62ch, 60%));
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+@media (max-width: 760px) {
+  .frame {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 55fr) minmax(0, 45fr);
+  }
+  .side { border-left: 0 !important; border-top: 1px solid var(--line); }
+  .resizer { display: none; }
+  .topbar { flex-wrap: wrap; row-gap: 0.1em; }
+  .status { order: 3; flex-basis: 100%; }
+}
+/* The Mac app: the top row is the window's title bar, centred on its traffic lights, which the window measures. */
+:root.titlebar {
+  --titlebar-center: 14px;
+  --titlebar-inset: 70px;
+}
+.titlebar .topbar { padding: 0 0 0 calc(var(--titlebar-inset) - var(--gutter)); line-height: calc(2 * var(--titlebar-center)); }
+.titlebar.full-screen .topbar { padding-left: 0; }
+/* One box for both its labels, so the controls stay where the window last heard they are. */
+.titlebar #theme-btn { min-width: 13ch; }
+
+/* ---- panel ---- */
+.board { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* The tab list scrolls within the row on its own, so + stays in view beside it. */
+.tab-row {
+  display: flex;
+  align-items: center;
+  min-height: var(--tab-row-height);
+  padding-right: 1.5ch;
+  border-bottom: 1px solid var(--line);
+}
+/* --dim falls short of 4.5:1 on the tabs' fills, so text in a tab is a shade nearer --fg. */
+.run-tabs {
+  --tab-ink: color-mix(in srgb, var(--fg) 20%, var(--dim));
+  display: flex;
+  min-width: 0;
+  padding: 0.3em 1.5ch;
+  scroll-padding-inline: 1.5ch;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  white-space: nowrap;
+}
+.new-tab { flex: none; min-width: 24px; min-height: 24px; }
+.save-tab { flex: none; min-height: 24px; margin-left: auto; padding-left: 2ch; }
+/* A tab is its button and the × after it, drawn as one block. */
+.run-tab, .tab-close { color: var(--tab-ink); background: var(--code); }
+.run-tab { padding: 0.15em 1.2ch; border-radius: 4px 0 0 4px; }
+.run-tab:has(+ .tab-close[hidden]) { border-radius: 4px; }
+.tab-close { min-width: 24px; border-radius: 0 4px 4px 0; }
+.tab-close + .run-tab { margin-left: 0.75ch; }
+.run-tab[aria-selected="true"], .run-tab[aria-selected="true"] + .tab-close { background: color-mix(in srgb, var(--accent) 18%, var(--bg)); }
+.run-tab:hover, .tab-close:enabled:hover, .new-tab:hover { background: var(--line); }
+.run-tab[aria-selected="true"] { color: var(--fg); font-weight: 600; }
+.run-tab .num { color: var(--tab-ink); font-weight: 400; }
+.panel {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--panel);
+  touch-action: none;
+  cursor: grab;
+}
+.panel.panning { cursor: grabbing; }
+.world { position: absolute; left: 0; top: 0; transform-origin: 0 0; user-select: none; -webkit-user-select: none; }
+.world.glide { transition: transform 0.35s ease; }
+.edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.edge {
+  fill: none;
+  stroke: var(--dim);
+  stroke-width: calc(1px / var(--k, 1));
+  transition: opacity 0.4s, stroke 0.4s, stroke-width 0.4s;
+}
+/* Faint lines grow as n² with the documents, so they neither fade in nor ease: thousands animating at once stall the page. */
+.edge.context { opacity: calc(0.16 * var(--context-fade, 1)); transition: none; }
+.edge.self { opacity: 0.5; stroke-dasharray: calc(2px / var(--k, 1)) calc(3px / var(--k, 1)); }
+.edge.flow { opacity: 0.5; }
+.edge.cite { opacity: 0.85; }
+.edge.hl { opacity: 0.9; stroke: var(--fg); }
+.drawing.is-lit .edge { opacity: 0.07; }
+.drawing.is-lit .edge.context { opacity: calc(0.07 * var(--context-fade, 1)); }
+.drawing.is-lit .edge.hl { opacity: 0.55; }
+.drawing.is-lit .edge.lit { opacity: 1; stroke: var(--accent); stroke-width: calc(1.6px / var(--k, 1)); }
+.drawing.is-lit .edge.on-claim { stroke: var(--claim); stroke-width: calc(2.2px / var(--k, 1)); }
+.edge.draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 0.7s ease-out forwards; }
+.edge.fade { animation: fade 0.6s ease-out; }
+
+.node {
+  position: absolute;
+  --node-icon: var(--icon-size);
+  translate: -50% calc(var(--node-icon) / -2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0 0.5ch;
+  color: var(--dim);
+  white-space: nowrap;
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: var(--node-fade, 1);
+  transition: opacity 0.4s;
+}
+.node.enter { animation: node-in 0.35s ease-out; }
+.node.doc { --node-icon: var(--doc-icon-size); }
+.node .icon { width: var(--node-icon); height: var(--node-icon); color: var(--fg); transition: color 0.4s; }
+.node .icon > svg { display: block; width: var(--node-icon); height: var(--node-icon); }
+.node .icon svg { overflow: visible; }
+/* A stack's copies behind are dim; each copy is cut out of those behind it by its shape, filled and widened in the panel's colour. */
+.stack > g:not(:last-child) { color: var(--dim); }
+.stack .stack-cut * { fill: var(--panel); stroke: var(--panel); stroke-width: var(--stack-halo); stroke-linecap: round; }
+.node .label { line-height: 1.5; background: var(--panel); }
+.node .spin { position: absolute; top: -0.7em; left: calc(50% + var(--node-icon) / 2 - 2px); color: var(--accent); display: none; }
+.node.working .spin { display: block; }
+.node.working .icon { color: var(--dim); }
+.node .pill {
+  position: absolute;
+  top: -0.3em;
+  left: calc(50% + var(--node-icon) / 2 - 1.2em);
+  min-width: 1.5em;
+  padding: 0 0.4em;
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.5;
+  text-align: center;
+  background: var(--path-text, var(--accent-ink));
+  border-radius: 1em;
+}
+.node.void { --node-fade: var(--void-fade); }
+.skip-badge { display: block; width: 14px; height: 14px; color: var(--alert); }
+.skip-badge svg { display: block; width: 100%; height: 100%; }
+/* Ringed in the panel's colour so it reads over the icon and the lines; it keeps full strength as its node fades. */
+.node .skip-badge {
+  position: absolute;
+  top: -4px;
+  left: calc(50% + var(--node-icon) / 2 - 10.5px);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1.5px var(--panel);
+}
+.node.skipped { opacity: 1; }
+.node.skipped > :not(.skip-badge) { opacity: var(--node-fade, 1); transition: opacity 0.4s, color 0.4s; }
+/* A fold's first node, which opens and closes it, is bolder; open, its ⋮ turns ⋯. */
+.node.fold.doc .icon { color: var(--dim); }
+.node.fold.doc .name { font-weight: 700; }
+.node.fold.doc.open .icon { rotate: 90deg; }
+.node.fold.void { opacity: 1; }
+.node.fold.void .icon { opacity: var(--void-fade); }
+.node.fold.doc:hover .icon { color: var(--fg); }
+.node.failed .icon, .node.failed .label { color: var(--err); }
+.node.failed .icon { opacity: 0.6; }
+.node:hover .label, .node.selected .label { color: var(--fg); }
+.node.selected .name { font-weight: 600; }
+.node.answer .icon {
+  display: grid;
+  place-items: center;
+  color: var(--accent);
+  font-size: 26px;
+  line-height: 1;
+}
+.drawing.is-lit .node { --node-fade: var(--off-trail-fade); }
+.drawing.is-lit .node.on-path { --node-fade: 1; --path-ink: var(--accent); --path-text: var(--accent-ink); --path-back: var(--folder-lit-back); }
+.drawing.is-lit .node.on-claim { --path-ink: var(--claim); --path-text: var(--claim); --path-back: var(--folder-claim-back); }
+.drawing.is-lit .node.on-path .icon { color: var(--path-ink); }
+.drawing.is-lit .node.on-path .label { color: var(--fg); }
+/* Off the trail a fold's icons dim with the other nodes, while its text keeps 4.5:1: it marks where its documents are. */
+.drawing.is-lit .node.fold { opacity: 1; }
+.drawing.is-lit .node.fold .icon { opacity: var(--off-trail-fade); }
+/* The file column's tree: thin and quiet, under the nodes, 1px on screen at any zoom as the edges are, never lit. */
+.tree-lines { fill: none; stroke: var(--dim); stroke-opacity: 0.55; stroke-width: calc(1px / var(--k, 1)); stroke-linecap: round; }
+.node .chevron { position: absolute; top: calc(var(--node-icon) / 2); width: 12px; height: 12px; translate: -50% -50%; color: var(--dim); }
+.node .chevron svg { display: block; width: 100%; height: 100%; transition: rotate 0.15s; }
+.node.folder.open .chevron svg { rotate: 90deg; }
+.node.folder:hover .chevron { color: var(--fg); }
+.folder-back { fill: var(--folder-back); }
+.folder-front { fill: var(--folder-front); }
+.drawing.is-lit .node.folder.on-path { --folder-back: var(--path-back); --folder-front: var(--path-ink); }
+.drawing.is-lit .node.folder.unused { --folder-back: var(--folder-unused-back); --folder-front: var(--folder-unused-front); }
+.drawing.is-lit .node.on-path .label .sources { color: var(--path-text); }
+/* An open folder never lights: its files do. Holding sources, it keeps its name readable and dims its icon, as a fold. */
+.drawing.is-lit .node.folder.open:not(.unused) { opacity: 1; }
+.drawing.is-lit .node.folder.open:not(.unused) :is(.icon, .chevron) { opacity: var(--off-trail-fade); }
+.fill-orange { fill: var(--fill-orange); }
+.fill-yellow { fill: var(--fill-yellow); }
+.fill-blue { fill: var(--fill-blue); }
+.ink { stroke: var(--tree-ink); }
+.drawing.is-lit .node.parsed.on-path .icon { --tree-ink: var(--path-ink); }
+
+.trash {
+  position: absolute;
+  left: 1ch;
+  top: 0.3em;
+  display: grid;
+  place-items: center;
+  width: var(--trash-size);
+  height: var(--trash-size);
+  color: var(--dim);
+  border: 1px dashed transparent;
+  border-radius: 6px;
+  pointer-events: none;
+}
+.trash svg { width: var(--trash-icon-size); height: var(--trash-icon-size); }
+.trash.over { color: var(--accent); background: var(--bg); border-color: var(--accent); }
+.panel-hint {
+  position: absolute;
+  left: calc(2ch + var(--trash-size));
+  top: 0.7em;
+  color: var(--dim);
+  pointer-events: none;
+}
+/* Shown without the can only for a tab with no files: then it is the panel's one line, a drop's invitation. */
+.trash[hidden] + .panel-hint { left: 0; right: 0; top: 50%; translate: 0 -50%; text-align: center; }
+.panel-hint .remove-all { pointer-events: auto; }
+.trash:has(+ .panel-hint .remove-all:is(:hover, :focus-visible)) { color: var(--fg); }
+.panel-tools {
+  position: absolute;
+  left: 1.5ch;
+  bottom: 0.7em;
+  display: flex;
+  gap: 2ch;
+  color: var(--dim);
+}
+
+.inspector, .settings, .save-note, .claim-note, .ask-note, .cap-note {
+  overflow: auto;
+  padding: 0.9em 2ch 1em;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: var(--shadow);
+  overscroll-behavior: contain;
+}
+.inspector {
+  position: absolute;
+  z-index: 5;
+  width: min(54ch, calc(100% - 20px));
+  max-height: calc(100% - 20px);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75em;
+  cursor: auto;
+  touch-action: pan-x pan-y;
+}
+.settings, .save-note, .claim-note, .ask-note, .cap-note { inset: auto; margin: 0; color: var(--fg); }
+.settings {
+  --settings-width: min(60ch, calc(100vw - 2 * var(--gutter)));
+  width: var(--settings-width);
+}
+.settings-body { display: flex; flex-direction: column; gap: 0.9em; }
+.save-note { max-width: calc(100vw - 2 * var(--gutter)); }
+.claim-note {
+  width: min(46ch, calc(100vw - 2 * var(--gutter)));
+  max-height: calc(100vh - 2 * var(--gutter));
+}
+.ask-note p + p { margin-top: 0.6em; }
+.ask-note strong, .cap-note strong { font-weight: 600; }
+.save-actions { display: flex; justify-content: flex-end; gap: 2ch; margin-top: 0.7em; }
+.save-actions .btn { min-height: 24px; }
+.keys {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0.45em 2ch;
+}
+.keys label, #models-label, .evidence label, .rounds label, .cap label { font-weight: 600; }
+#key-other, .key-state { grid-column: 2; }
+/* Two lines beside its URL and key, so the fields keep the width the providers' labels leave them. */
+#servers-label { width: min-content; grid-row: span 2; }
+#servers-label span { white-space: nowrap; }
+.server-list { grid-column: 1 / -1; margin: 0; padding: 0; list-style: none; }
+.key-state { display: flex; align-items: baseline; column-gap: 2ch; }
+.key-state > span { min-width: 0; overflow-wrap: break-word; }
+.key-state .remove { min-height: 24px; }
+.field {
+  width: 100%;
+  min-width: 0;
+  padding: 0.3em 1ch;
+  font: inherit;
+  color: var(--fg);
+  background: var(--code);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.field:focus-visible { outline: 1px solid var(--accent); outline-offset: 0; border-color: var(--accent); }
+/* A line kept for what a save says, so nothing moves when it does. */
+#settings-saved { min-height: 1lh; }
+.evidence, .rounds, .cap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.45em 2ch; }
+.models { display: flex; flex-direction: column; gap: 0.45em; }
+#model-list { margin: 0; padding: 0; list-style: none; }
+#model-list li, .model-add { display: flex; align-items: baseline; column-gap: 2ch; }
+#model-list li > span { min-width: 0; overflow-wrap: break-word; }
+#model-list .remove, #model-add-btn { min-height: 24px; }
+/* The name's field takes the room its server's select and add leave it. */
+#model-add { flex: 1; }
+.models, .evidence { padding-top: 0.9em; border-top: 1px solid var(--line); }
+/* As wide as the widest label, "evidence level", so the selects and the token cap's field line up. */
+.evidence label, .rounds label, .cap-head { min-width: 14ch; }
+#evidence, #rounds, #model-where { width: auto; }
+.cap-head { display: flex; align-items: baseline; column-gap: 1ch; }
+/* Room for the largest cap r3trace app takes, 1000000, and the example it shows. */
+#token-cap { width: 13ch; }
+.inspector.wide { width: min(84ch, calc(100% - 20px)); }
+.inspector > .btn { align-self: flex-start; }
+.insp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 2ch; }
+.grip { cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.moving > .grip { cursor: grabbing; }
+.insp-title { font-weight: 600; overflow-wrap: anywhere; }
+.insp-title .g { color: var(--fg); }
+.insp-title .g.accent { color: var(--accent); }
+.insp-text { overflow-wrap: anywhere; }
+.insp-text.strong { font-weight: 600; }
+.skip-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 1ch;
+  padding: 0.5em 1.5ch;
+  overflow-wrap: anywhere;
+  background: color-mix(in srgb, var(--alert) 7%, var(--bg));
+  border-radius: 4px;
+}
+.skip-note > .skip-badge { flex: none; margin-top: 0.2em; }
+.skip-note strong { font-weight: 600; color: var(--alert-ink); }
+.row { overflow-wrap: anywhere; }
+.ref {
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+.ref:hover { text-decoration-color: var(--fg); }
+.code {
+  margin: 0;
+  padding: 0.7em 1.5ch;
+  overflow: auto;
+  font: inherit;
+  white-space: pre;
+  tab-size: 4;
+  background: var(--code);
+  border-radius: 4px;
+}
+.code.wrap { white-space: pre-wrap; overflow-wrap: anywhere; }
+.code.json > span { display: block; padding-left: var(--indent); text-indent: calc(-1 * var(--indent)); }
+/* Where a long text stops short, under its last line shown, and left out of a copy of it. */
+.cut { display: block; margin-top: 0.7em; user-select: none; -webkit-user-select: none; }
+/* Standing for the lines of a long text not drawn, above and below those near the view. */
+.code .gap, .code.near > span { display: block; }
+.used { color: var(--accent-ink); }
+.trail-line:empty { display: none; }
+mark { color: inherit; background: var(--mark); box-shadow: inset 0 -1.5px 0 var(--mark-line); }
+mark.multi { background: var(--mark-strong); }
+.claim-note mark, mark.on-claim { --mark: var(--claim-mark); --mark-strong: var(--claim-mark-strong); --mark-line: var(--claim); }
+mark[title] { cursor: help; }
+.flash { animation: flash 1.2s ease-out; }
+.fold > summary { color: var(--dim); list-style: none; cursor: pointer; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: "▸ "; }
+.fold[open] > summary::before { content: "▾ "; }
+.fold > summary:hover { color: var(--fg); }
+.fold-body { margin-top: 0.4em; overflow-wrap: anywhere; }
+.quotes { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4em; }
+.quote:has(mark), .sentence { text-decoration: none; }
+
+/* ---- side column ---- */
+/* Over the side column's left edge and its 2ch of padding, clear of any control on either side;
+   grid-column 2 makes that column its containing block. */
+.resizer {
+  position: absolute;
+  z-index: 1;
+  grid-column: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2ch;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.resizer:focus-visible { outline: 0; border-radius: 0; }
+.resizer:hover, .resizer:focus-visible, .frame.resizing .resizer { box-shadow: inset 3px 0 var(--accent); }
+.frame.resizing { cursor: col-resize; }
+.frame.resizing > :not(.resizer) { pointer-events: none; }
+.side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+}
+.tabs {
+  display: flex;
+  align-items: center;
+  gap: 3ch;
+  min-height: var(--tab-row-height);
+  padding: 0 2ch;
+  border-bottom: 1px solid var(--line);
+}
+.tab[aria-selected="true"] { color: var(--fg); font-weight: 600; }
+.tab .count { color: var(--dim); font-weight: 400; }
+.pane { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.transcript {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.6em 2ch 1em;
+  display: flex;
+  flex-direction: column;
+}
+.turn, .turn-body { display: flex; flex-direction: column; }
+.line {
+  display: grid;
+  grid-template-columns: 2ch minmax(0, 1fr);
+  align-items: start;
+  width: 100%;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  overflow-wrap: anywhere;
+}
+.line.main, .line.answer, .log { margin-top: 0.55em; }
+.line.sub { padding-left: 2ch; color: var(--dim); }
+.line.dim { color: var(--dim); }
+.line.link { cursor: pointer; }
+.line.link:hover { color: var(--fg); }
+.line.user {
+  margin-top: 0.9em;
+  padding: 0.3em 1ch;
+  background: var(--panel);
+  border-radius: 4px;
+}
+.line.user .g { color: var(--dim); }
+.line.user.follow-up .g { color: var(--accent); }
+.log-head .follow-up { color: var(--accent-ink); }
+.line.answer .g { color: var(--accent); }
+.line.answer .t { font-weight: 600; }
+.sentences, .skips { margin: 0.3em 0 0 2ch; }
+.skips { color: var(--dim); overflow-wrap: anywhere; }
+.skips .ref { color: inherit; }
+.skips .ref:hover { color: var(--fg); }
+.quoted { display: flex; flex-direction: column; align-items: flex-start; gap: 0.3em; margin-top: 0.6em; }
+.quoted-name, .quoted-head { font-weight: 600; }
+.sentence, .doc-summary { padding-left: 1.5ch; border-left: 1px solid var(--line); overflow-wrap: anywhere; }
+/* A sentence linked to its evidence: faint until hovered or focused, or while its evidence is open. */
+.claim {
+  cursor: pointer;
+  text-decoration: underline dotted 1px;
+  text-decoration-color: var(--dim);
+  text-underline-offset: 3px;
+}
+.claim:hover, .claim.lit { text-decoration: underline solid 2px var(--claim); background: var(--claim-mark); border-radius: 2px; }
+.line.linking { margin-top: 0.3em; }
+.log { color: var(--dim); }
+.log-head { grid-template-columns: 2ch 2ch minmax(0, 1fr); }
+/* A 24px target, centred on the glyph column, that doesn't grow its line: a log's chevron, the mark that opens an
+   answer's node, or ⓘ. */
+.log-toggle, .answer-mark, #ask-note-btn, #cap-note-btn {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: calc((1lh - 24px) / 2) 0 calc((1lh - 24px) / 2) calc(0.5ch - 12px);
+}
+.log-toggle svg { width: 10px; height: 10px; transition: rotate 0.15s; }
+.log-toggle[aria-expanded="true"] svg { rotate: 90deg; }
+.log-spin { color: var(--accent); }
+.log-lines { padding-left: 2ch; }
+
+.ask {
+  margin: 0 2ch 0.7em;
+  padding: 0.55em 1.5ch 0.45em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.ask:focus-within { border-color: var(--accent); }
+.prompt { position: relative; }
+.prompt .caret { position: absolute; left: 0; top: 0; color: var(--dim); }
+.ask:focus-within .caret { color: var(--accent); }
+.prompt:has(textarea:placeholder-shown) .caret { visibility: hidden; }
+#question {
+  display: block;
+  width: 100%;
+  min-height: calc(1.55em * 2);
+  max-height: calc(1.55em * 6);
+  field-sizing: content;
+  padding: 0 0 0 2ch;
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 0;
+  outline: none;
+  resize: none;
+}
+#question:placeholder-shown { padding-left: 0; }
+.field::placeholder, #question::placeholder { color: var(--dim); opacity: 1; }
+.ask-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 0.4em 2ch; color: var(--dim); }
+.pick { position: relative; display: flex; min-width: 0; }
+.pick::after { content: "▾"; position: absolute; right: 0; pointer-events: none; }
+.pick:hover { color: var(--fg); }
+#model-pick {
+  appearance: none;
+  field-sizing: content;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 2ch 0 0;
+  font: inherit;
+  color: inherit;
+  text-overflow: ellipsis;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+#model-pick optgroup, #model-pick option { color: var(--fg); background: var(--bg); }
+#model-hint { align-self: flex-start; }
+.ask-actions { display: flex; gap: 2ch; margin-left: auto; }
+.run-btn { font-weight: 600; }
+/* In the row, its target keeps the glyph's own width of the gap on either side. */
+#ask-note-btn, #cap-note-btn { margin: calc((1lh - 24px) / 2) calc((1ch - 24px) / 2); }
+#ask-note-btn[aria-expanded="true"], #cap-note-btn[aria-expanded="true"] { color: var(--fg); }
+.note { padding: 0 2ch 0.7em; color: var(--dim); }
+
+.files {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0.9em 2ch 1em;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9em;
+}
+/* A full line pushes remove all under the head, never into it. */
+.files-top { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 2ch; }
+.files-top .remove-all { margin-left: auto; }
+.remove-all { min-height: 24px; }
+.file-list { list-style: none; margin: 0; padding: 0; }
+.file-list li { display: flex; align-items: baseline; gap: 2ch; }
+.file-list button { min-height: 24px; }
+.file {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 2ch;
+  flex: 1;
+  padding: 0.05em 0;
+  font: inherit;
+  color: var(--fg);
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 3px;
+  cursor: pointer;
+}
+.file .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file .size { grid-column: 3; color: var(--dim); }
+.file.off .name { color: var(--dim); }
+.file:hover .name { text-decoration: underline; text-decoration-color: var(--dim); text-underline-offset: 3px; }
+.file-actions { display: flex; flex-wrap: wrap; gap: 0.3em 3ch; }
+.file-actions label { cursor: pointer; }
+.drop-hint {
+  padding: 0.9em 2ch;
+  color: var(--dim);
+  text-align: center;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+}
+.file-view { gap: 0.7em; }
+.file-view .back { align-self: flex-start; }
+.drop-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: none;
+  place-items: center;
+  color: var(--accent);
+  background: var(--bg);
+  opacity: 0.94;
+  border: 1px dashed var(--accent);
+  pointer-events: none;
+}
+.frame.dropping .drop-overlay { display: grid; }
+
+@keyframes node-in { from { opacity: 0; scale: 0.8; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes fade { from { opacity: 0; } }
+@keyframes flash { from { outline: 2px solid var(--mark-line); outline-offset: 2px; } to { outline: 2px solid transparent; outline-offset: 6px; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  .flash { outline: 2px solid var(--mark-line); }
+}

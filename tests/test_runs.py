@@ -9,11 +9,11 @@ import pytest
 import yaml
 from pydantic import BaseModel, Field
 
-from r3con import settings
-from r3con.config import PROMPT_STAGES, RunConfig
-from r3con.masking import masked, register_key
-from r3con.pipeline import run_pipeline
-from r3con.runs import (
+from r3trace import settings
+from r3trace.config import PROMPT_STAGES, RunConfig
+from r3trace.masking import masked, register_key
+from r3trace.pipeline import run_pipeline
+from r3trace.runs import (
     StageRun,
     TaskLogger,
     call_totals,
@@ -24,8 +24,8 @@ from r3con.runs import (
     run_lock,
     write_manifest,
 )
-from r3con.runtime.llm import register_credentials
-from r3con.settings import settings_snapshot
+from r3trace.runtime.llm import register_credentials
+from r3trace.settings import settings_snapshot
 from tests.fakes import DIGITS_KEY, GatewayKey, on_your_data
 
 MODEL = "openai/gpt-6-luna"
@@ -501,7 +501,7 @@ def test_a_json_file_is_written_whole_or_left_as_it_was(logger, monkeypatch):
     def killed(source, target):
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("r3con.runs.os.replace", killed)
+    monkeypatch.setattr("r3trace.runs.os.replace", killed)
     with pytest.raises(KeyboardInterrupt):
         logger.write_json("relevance/result", {"rounds": [1, 2]})
     folder = logger.dir / "relevance"
@@ -524,7 +524,7 @@ def test_a_folder_on_a_file_system_without_locks_is_written_unlocked_with_a_warn
         def acquire(self):
             raise error
 
-    monkeypatch.setattr("r3con.runs.FileLock", Unlockable)
+    monkeypatch.setattr("r3trace.runs.FileLock", Unlockable)
     with run_lock(logger.dir):
         logger.write_json("manifest", {})
     assert "can't be locked" in caplog.text
@@ -545,9 +545,9 @@ def test_reopening_a_folder_for_a_resume_records_it_and_ends_a_line_cut_short(lo
     reopen_for_resume(logger, settings_snapshot())
     reopen_for_resume(logger, {**settings_snapshot(), "doc_workers": 2})
     manifest = json.loads((logger.dir / "manifest.json").read_text())
-    version = importlib.metadata.version("r3context")
+    version = importlib.metadata.version("r3trace")
     assert [
-        (resume["r3con_version"], resume["settings"]["doc_workers"])
+        (resume["r3trace_version"], resume["settings"]["doc_workers"])
         for resume in manifest["resumes"]
     ] == [(version, settings_snapshot()["doc_workers"]), (version, 2)]
     assert (logger.dir / "events.jsonl").read_text().endswith('{"type": "rel\n')
@@ -674,7 +674,7 @@ def test_the_manifest_records_the_identity_and_the_installed_version(logger):
         logger, task="what happened?", config=run_config, n_docs=3, context_chars=1234
     )
     manifest = json.loads((logger.dir / "manifest.json").read_text())
-    assert manifest["r3con_version"] == importlib.metadata.version("r3context")
+    assert manifest["r3trace_version"] == importlib.metadata.version("r3trace")
     assert manifest["litellm_version"] == importlib.metadata.version("litellm")
     assert manifest["task"] == "what happened?"
     assert manifest["n_docs"] == 3
@@ -848,7 +848,7 @@ def test_the_manifest_names_the_file_each_prompt_and_the_config_came_from(
     overlaid = tmp_path / "overlay" / "relevance" / "later-rounds" / "v1.yaml"
     overlaid.parent.mkdir(parents=True)
     overlaid.write_text("instructions: |-\n  OVERLAID\n")
-    monkeypatch.setenv("R3CON_PROMPTS_DIR", str(tmp_path / "overlay"))
+    monkeypatch.setenv("R3TRACE_PROMPTS_DIR", str(tmp_path / "overlay"))
     write_manifest(logger, task="q", config=config(), n_docs=1)
     sources = json.loads((logger.dir / "manifest.json").read_text())["sources"]
     assert sources["config"] == str(settings.CONFIGS_DIR / "default.yaml")

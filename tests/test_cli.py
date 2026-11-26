@@ -17,17 +17,17 @@ import litellm
 import platformdirs
 import pytest
 
-from r3con import settings
-from r3con.app.server import (
+from r3trace import settings
+from r3trace.app.server import (
     APP_KEY_SERVICE,
     FORCED_EXIT_CODE,
     MAC_APP_KEY_SERVICE,
     QUIT_SECONDS,
 )
-from r3con.cli import build_parser, main
-from r3con.config import PROMPT_STAGES, load_config
-from r3con.documents import read_documents
-from r3con.runs import run_lock
+from r3trace.cli import build_parser, main
+from r3trace.config import PROMPT_STAGES, load_config
+from r3trace.documents import read_documents
+from r3trace.runs import run_lock
 from tests.fakes import (
     ANSWERING,
     CAFETERIA,
@@ -55,11 +55,11 @@ MASKED_HEADER = {"extra_headers": {"Authorization": "REDACTED"}}
 APP_MODULES = ("starlette", "uvicorn", "platformdirs", "keyring")
 # Far longer than the app takes to print its two lines, which it does before serving.
 LAUNCH_SECONDS = 30
-# r3con app whose model calls say so on stdout, in one write, then never return.
+# r3trace app whose model calls say so on stdout, in one write, then never return.
 NEVER_ANSWERING_APP = """
 import sys, threading
 import litellm
-from r3con.cli import main
+from r3trace.cli import main
 
 def never_answers(**request):
     sys.stdout.write("a model call\\n")
@@ -76,19 +76,19 @@ NEVER_ANSWERED_RUN = {
     "model": "openai/never-answers",
     "documents": ["A memo.", "Another memo."],
 }
-CUT_OFF = "r3con app: quitting, cutting off 1 run(s) or ask(s) still going"
+CUT_OFF = "r3trace app: quitting, cutting off 1 run(s) or ask(s) still going"
 # What uvicorn prints as its grace runs out on an open stream, which reads as a crash.
 CRASH_SIGNS = ("Traceback", "CancelledError", "timeout graceful shutdown exceeded")
 # Room past QUIT_SECONDS for a slow runner, and far short of the old 60 s wait.
 QUIT_BOUND_SECONDS = QUIT_SECONDS + 3
 NO_APP_EXTRA = (
-    'r3con: the app needs its extra: uv tool install "r3context[app]" '
-    '(or pip install "r3context[app]")\n'
+    'r3trace: the app needs its extra: uv tool install "r3trace[app]" '
+    '(or pip install "r3trace[app]")\n'
 )
 
 
-def r3con(*argv: str) -> int:
-    """The exit code ``r3con <argv>`` would leave, argparse's included."""
+def r3trace(*argv: str) -> int:
+    """The exit code ``r3trace <argv>`` would leave, argparse's included."""
     try:
         return main(list(argv))
     except SystemExit as exit:
@@ -114,7 +114,7 @@ def scripted(llm, monkeypatch):
 
 
 def test_a_run_prints_the_answer_alone_on_stdout(answering, capsys):
-    assert r3con("run", "Who?", str(MEMOS), "--summary-rounds", "1") == 0
+    assert r3trace("run", "Who?", str(MEMOS), "--summary-rounds", "1") == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     assert "5 document(s) · default[model=gpt-6-luna,rounds=1," in err
@@ -123,7 +123,7 @@ def test_a_run_prints_the_answer_alone_on_stdout(answering, capsys):
 
 def test_a_run_that_skipped_says_what_in_one_line_after_the_answer(answering, capsys):
     skipping(answering, EASTFIELD)
-    assert r3con("run", "Who?", str(MEMOS)) == 0
+    assert r3trace("run", "Who?", str(MEMOS)) == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER.replace(f'{EASTFIELD}; ', '')}\n"
     run_dir = path_after("artifacts: ", err)
@@ -136,7 +136,7 @@ def test_a_run_that_skipped_says_what_in_one_line_after_the_answer(answering, ca
 
 def test_the_skip_line_names_the_first_three_and_counts_the_rest(answering, capsys):
     skipping(answering, NORTHGATE, EASTFIELD, CAFETERIA)
-    assert r3con("run", "Who?", str(MEMOS)) == 0
+    assert r3trace("run", "Who?", str(MEMOS)) == 0
     err = capsys.readouterr().err
     run_dir = path_after("artifacts: ", err)
     assert err.splitlines()[-1] == (
@@ -147,13 +147,13 @@ def test_the_skip_line_names_the_first_three_and_counts_the_rest(answering, caps
 
 
 def test_a_run_that_skipped_nothing_says_nothing_of_skips(answering, capsys):
-    assert r3con("run", "Who?", str(MEMOS)) == 0
+    assert r3trace("run", "Who?", str(MEMOS)) == 0
     assert not re.search(r"^\d+ skipped: ", capsys.readouterr().err, re.MULTILINE)
 
 
 def test_the_flags_override_the_config_and_show_in_the_label(answering, capsys):
     argv = ["--model", QWEN, "--summary-rounds", "1", "--reasoning", "coding"]
-    assert r3con("run", "Who?", str(MEMOS), *argv) == 0
+    assert r3trace("run", "Who?", str(MEMOS), *argv) == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     assert "default[model=Qwen3.5-35B-A3B,rounds=1,reasoning=coding," in err
@@ -164,7 +164,7 @@ def test_the_flags_override_the_config_and_show_in_the_label(answering, capsys):
 
 def test_the_evidence_level_flag_reaches_the_config_and_the_label(answering, capsys):
     argv = ["--summary-rounds", "1", "--evidence-level", "document"]
-    assert r3con("run", "Who?", str(MEMOS), *argv) == 0
+    assert r3trace("run", "Who?", str(MEMOS), *argv) == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     assert (
@@ -177,8 +177,8 @@ def test_the_evidence_level_flag_reaches_the_config_and_the_label(answering, cap
 
 
 def finished_run(capsys) -> Path:
-    """The folder of a finished ``r3con run`` over the memos."""
-    assert r3con("run", "Who?", str(MEMOS), "--summary-rounds", "1") == 0
+    """The folder of a finished ``r3trace run`` over the memos."""
+    assert r3trace("run", "Who?", str(MEMOS), "--summary-rounds", "1") == 0
     return path_after("artifacts: ", capsys.readouterr().err)
 
 
@@ -200,7 +200,7 @@ def pinning_a_missing_prompt(run_dir: Path) -> None:
 
 def test_ask_prints_a_new_answer_and_where_its_artifacts_are(answering, capsys):
     run_dir = finished_run(capsys)
-    assert r3con("ask", str(run_dir), "Who else?", "--model", QWEN) == 0
+    assert r3trace("ask", str(run_dir), "Who else?", "--model", QWEN) == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     folder = path_after("artifacts: ", err)
@@ -227,7 +227,7 @@ def test_ask_prints_a_new_answer_and_where_its_artifacts_are(answering, capsys):
             "as a run folder: ValueError: zip() argument 2 is shorter than argument 1",
         ),
     ],
-    ids=["older-r3con", "missing-prompt", "a-parse-citation-short"],
+    ids=["older-r3trace", "missing-prompt", "a-parse-citation-short"],
 )
 def test_ask_over_a_run_folder_it_cannot_use_exits_2_in_one_line(
     answering, capsys, change, message
@@ -235,9 +235,9 @@ def test_ask_over_a_run_folder_it_cannot_use_exits_2_in_one_line(
     run_dir = finished_run(capsys)
     change(run_dir)
     sent = len(answering.requests)
-    assert r3con("ask", str(run_dir), "Who else?") == 2
+    assert r3trace("ask", str(run_dir), "Who else?") == 2
     err = capsys.readouterr().err
-    assert err.startswith("r3con: ")
+    assert err.startswith("r3trace: ")
     assert message in err
     assert err.count("\n") == 1
     assert len(answering.requests) == sent
@@ -249,9 +249,9 @@ def test_an_ask_with_a_refused_override_exits_2_in_one_line_and_makes_no_folder(
 ):
     run_dir = finished_run(capsys)
     sent = len(answering.requests)
-    assert r3con("ask", str(run_dir), "Who else?", "--model", "") == 2
+    assert r3trace("ask", str(run_dir), "Who else?", "--model", "") == 2
     assert capsys.readouterr().err == (
-        "r3con: override: `model=''`: String should have at least 1 character.\n"
+        "r3trace: override: `model=''`: String should have at least 1 character.\n"
     )
     assert len(answering.requests) == sent
     assert not (run_dir / "asks").exists()
@@ -270,9 +270,9 @@ def test_an_ask_that_would_send_a_masked_param_exits_2_in_one_line_and_makes_no_
     run_dir = finished_run(capsys)
     saving_params(run_dir, MASKED_HEADER)
     sent = len(answering.requests)
-    assert r3con("ask", str(run_dir), "Who else?") == 2
+    assert r3trace("ask", str(run_dir), "Who else?") == 2
     assert capsys.readouterr().err == (
-        "r3con: REDACTED, the mask a run's manifest saves in place of a credential, "
+        "r3trace: REDACTED, the mask a run's manifest saves in place of a credential, "
         "would be sent: pass --api-key or --base-url in place of a masked `api_key` or "
         "`api_base`, or ask with another --model, which sends none of the run's "
         "params. Masked params: `extra_headers.Authorization`.\n"
@@ -299,7 +299,7 @@ def test_an_ask_over_a_masked_param_sends_what_the_option_its_refusal_names_give
 ):
     run_dir = finished_run(capsys)
     saving_params(run_dir, saved)
-    assert r3con("ask", str(run_dir), "Who else?", *option) == 0
+    assert r3trace("ask", str(run_dir), "Who else?", *option) == 0
     asked = answering.requests[-1]
     assert {name: asked.get(name) for name in sent} == sent
 
@@ -308,45 +308,45 @@ def test_a_failed_ask_exits_1_and_points_at_its_partial_artifacts(answering, cap
     run_dir = finished_run(capsys)
     down = litellm.APIConnectionError("provider down", llm_provider="openai", model="m")
     answering.answers(reasoning=down)
-    assert r3con("ask", str(run_dir), "Who else?") == 1
+    assert r3trace("ask", str(run_dir), "Who else?") == 1
     err = capsys.readouterr().err
     folder = path_after("artifacts: ", err)
-    assert path_after("r3con: partial artifacts in ", err) == folder
+    assert path_after("r3trace: partial artifacts in ", err) == folder
     assert "provider down" in (folder / "reasoning" / "error.txt").read_text()
 
 
 def test_ask_over_a_folder_that_is_not_a_run_exits_2_in_one_line(
     scripted, tmp_path, capsys
 ):
-    assert r3con("ask", str(tmp_path), "Who?") == 2
+    assert r3trace("ask", str(tmp_path), "Who?") == 2
     assert capsys.readouterr().err == (
-        f"r3con: {tmp_path} is not a run folder: it has no manifest.json.\n"
+        f"r3trace: {tmp_path} is not a run folder: it has no manifest.json.\n"
     )
     assert scripted.requests == []
 
 
 def test_seed_is_not_an_option(scripted, capsys):
-    assert r3con("run", "Who?", str(MEMOS), "--seed", "7") == 2
+    assert r3trace("run", "Who?", str(MEMOS), "--seed", "7") == 2
     assert "unrecognized arguments: --seed" in capsys.readouterr().err
     assert scripted.requests == []
 
 
 def test_a_source_that_matches_nothing_exits_2_and_says_so(scripted, capsys):
-    assert r3con("run", "Who?", "./reports") == 2
-    assert capsys.readouterr().err == "r3con: No documents found at './reports'.\n"
+    assert r3trace("run", "Who?", "./reports") == 2
+    assert capsys.readouterr().err == "r3trace: No documents found at './reports'.\n"
     assert scripted.requests == []
 
 
 def test_sources_that_are_all_empty_exit_2(scripted, tmp_path, capsys):
     (tmp_path / "empty.txt").write_text("  \n")
-    assert r3con("run", "Who?", str(tmp_path / "empty.txt")) == 2
-    assert "r3con: no documents to read" in capsys.readouterr().err
+    assert r3trace("run", "Who?", str(tmp_path / "empty.txt")) == 2
+    assert "r3trace: no documents to read" in capsys.readouterr().err
     assert scripted.requests == []
 
 
 @pytest.mark.parametrize("option", ["--config", "--reasoning", "--evidence-level"])
 def test_a_usage_error_exits_2(scripted, capsys, option):
-    assert r3con("run", "Who?", str(MEMOS), option, "nope") == 2
+    assert r3trace("run", "Who?", str(MEMOS), option, "nope") == 2
     assert "invalid choice: 'nope'" in capsys.readouterr().err
     assert scripted.requests == []
 
@@ -356,10 +356,12 @@ def test_a_provider_failure_exits_1_and_points_at_the_partial_artifacts(
 ):
     down = litellm.APIConnectionError("provider down", llm_provider="openai", model="m")
     scripted.answers(relevance=down)
-    assert r3con("run", "Who?", str(MEMOS)) == 1
+    assert r3trace("run", "Who?", str(MEMOS)) == 1
     err = capsys.readouterr().err
-    assert "r3con: APIConnectionError: litellm.APIConnectionError: provider down" in err
-    partial = path_after("r3con: partial artifacts in ", err)
+    assert (
+        "r3trace: APIConnectionError: litellm.APIConnectionError: provider down" in err
+    )
+    partial = path_after("r3trace: partial artifacts in ", err)
     assert partial == path_after("artifacts: ", err)
     assert err.count("partial artifacts") == 1
     assert (partial / "manifest.json").is_file()
@@ -371,22 +373,24 @@ def test_a_config_pinning_a_missing_prompt_exits_2_before_any_request(
 ):
     prompts = {**dict.fromkeys(PROMPT_STAGES, "v1"), "reasoning/coding": "v9"}
     configs(exp={"model": "openai/m", "prompts": prompts})
-    assert r3con("run", "Who?", str(MEMOS), "--config", "exp") == 2
+    assert r3trace("run", "Who?", str(MEMOS), "--config", "exp") == 2
     err = capsys.readouterr().err
-    assert err.startswith("r3con: No prompt for stage 'reasoning/coding' version 'v9'")
+    assert err.startswith(
+        "r3trace: No prompt for stage 'reasoning/coding' version 'v9'"
+    )
     assert err.count("\n") == 1
     assert scripted.requests == []
     assert not (tmp_path / "logs").exists()
 
 
-def test_a_config_pinning_a_stage_r3con_does_not_have_exits_2_in_one_line(
+def test_a_config_pinning_a_stage_r3trace_does_not_have_exits_2_in_one_line(
     scripted, configs, capsys
 ):
     prompts = {**dict.fromkeys(PROMPT_STAGES, "v1"), "relevance": "v1"}
     configs(old={"model": "openai/m", "prompts": prompts})
-    assert r3con("run", "Who?", str(MEMOS), "--config", "old") == 2
+    assert r3trace("run", "Who?", str(MEMOS), "--config", "old") == 2
     assert capsys.readouterr().err == (
-        "r3con: config 'old': `prompts.relevance`: Input should be "
+        "r3trace: config 'old': `prompts.relevance`: Input should be "
         "'relevance/first-round', 'relevance/later-rounds', 'structuring/schema', "
         "'structuring/parsing', 'reasoning/direct', 'reasoning/coding', 'claims' "
         "or 'linking'.\n"
@@ -394,14 +398,14 @@ def test_a_config_pinning_a_stage_r3con_does_not_have_exits_2_in_one_line(
     assert scripted.requests == []
 
 
-def test_a_config_naming_a_reasoning_path_r3con_does_not_have_exits_2_in_one_line(
+def test_a_config_naming_a_reasoning_path_r3trace_does_not_have_exits_2_in_one_line(
     scripted, configs, capsys
 ):
     prompts = dict.fromkeys(PROMPT_STAGES, "v1")
     configs(bad={"model": "openai/m", "reasoning": "agent", "prompts": prompts})
-    assert r3con("run", "Who?", str(MEMOS), "--config", "bad") == 2
+    assert r3trace("run", "Who?", str(MEMOS), "--config", "bad") == 2
     assert capsys.readouterr().err == (
-        "r3con: config 'bad': `reasoning='agent'`: Input should be 'direct' or "
+        "r3trace: config 'bad': `reasoning='agent'`: Input should be 'direct' or "
         "'coding'.\n"
     )
     assert scripted.requests == []
@@ -410,15 +414,15 @@ def test_a_config_naming_a_reasoning_path_r3con_does_not_have_exits_2_in_one_lin
 def test_an_interrupt_exits_130_and_says_how_to_carry_on(scripted, capsys):
     scripted.replies(KeyboardInterrupt())
     source = str(MEMOS / "01_northgate.txt")
-    assert r3con("run", "Who?", source) == 130
+    assert r3trace("run", "Who?", source) == 130
     err = capsys.readouterr().err
     run_dir = path_after("artifacts: ", err)
-    assert err.endswith(f"r3con: interrupted.\n{carrying_on(run_dir, source)}\n")
+    assert err.endswith(f"r3trace: interrupted.\n{carrying_on(run_dir, source)}\n")
 
 
 def test_no_artifacts_writes_no_run_folder(answering, tmp_path, capsys):
     argv = ["--summary-rounds", "1", "--no-artifacts"]
-    assert r3con("run", "Who?", str(MEMOS), *argv) == 0
+    assert r3trace("run", "Who?", str(MEMOS), *argv) == 0
     assert "artifacts:" not in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
 
@@ -426,7 +430,7 @@ def test_no_artifacts_writes_no_run_folder(answering, tmp_path, capsys):
 def test_logs_dir_chooses_where_the_run_folder_goes(answering, tmp_path, capsys):
     out = tmp_path / "out"
     argv = ["--summary-rounds", "1", "--logs-dir", str(out)]
-    assert r3con("run", "Who?", str(MEMOS), *argv) == 0
+    assert r3trace("run", "Who?", str(MEMOS), *argv) == 0
     run_dir = path_after("artifacts: ", capsys.readouterr().err)
     assert run_dir.parent == out
     assert (run_dir / "manifest.json").is_file()
@@ -440,7 +444,7 @@ def test_doc_workers_bounds_how_many_documents_are_read_at_once(answering, worke
 
     answering.answers(relevance=slow_note)
     argv = ["--summary-rounds", "1", "--doc-workers", str(workers)]
-    assert r3con("run", "Who?", str(MEMOS), *argv) == 0
+    assert r3trace("run", "Who?", str(MEMOS), *argv) == 0
     assert answering.peak_in_flight == workers
 
 
@@ -450,22 +454,22 @@ def test_doc_workers_bounds_how_many_documents_are_read_at_once(answering, worke
         (
             ["--doc-workers", "0"],
             {},
-            "r3con: --doc-workers must be >= 1, got 0.\n",
+            "r3trace: --doc-workers must be >= 1, got 0.\n",
         ),
         (
             [],
-            {"R3CON_DOC_WORKERS": "0"},
-            "r3con: R3CON_DOC_WORKERS must be >= 1, got 0.\n",
+            {"R3TRACE_DOC_WORKERS": "0"},
+            "r3trace: R3TRACE_DOC_WORKERS must be >= 1, got 0.\n",
         ),
         (
             [],
-            {"R3CON_DOC_WORKERS": "abc"},
-            "r3con: R3CON_DOC_WORKERS must be an integer >= 1, got 'abc'.\n",
+            {"R3TRACE_DOC_WORKERS": "abc"},
+            "r3trace: R3TRACE_DOC_WORKERS must be an integer >= 1, got 'abc'.\n",
         ),
         (
             [],
-            {"R3CON_LOG_LEVEL": "loud"},
-            "r3con: R3CON_LOG_LEVEL must be a level name such as INFO, got 'loud'.\n",
+            {"R3TRACE_LOG_LEVEL": "loud"},
+            "r3trace: R3TRACE_LOG_LEVEL must be a level name such as INFO, got 'loud'.\n",
         ),
     ],
     ids=["flag-below-one", "variable-below-one", "variable-not-int", "bad-level"],
@@ -478,7 +482,7 @@ def test_a_bad_setting_exits_2_naming_it_before_any_document_is_read(
 ):
     for name, value in env.items():
         monkeypatch.setenv(name, value)
-    assert r3con(*command, "./missing", *argv) == 2
+    assert r3trace(*command, "./missing", *argv) == 2
     assert capsys.readouterr().err == stderr
     assert scripted.requests == []
     assert list(tmp_path.iterdir()) == []
@@ -488,15 +492,15 @@ def test_a_cap_that_is_not_an_integer_exits_2_without_a_traceback(
     scripted, tmp_path, capsys, monkeypatch
 ):
     monkeypatch.setattr(settings, "SCHEMA_MAX_ATTEMPTS", "3")
-    assert r3con("run", "Who?", str(MEMOS)) == 2
+    assert r3trace("run", "Who?", str(MEMOS)) == 2
     err = capsys.readouterr().err
-    assert err == "r3con: SCHEMA_MAX_ATTEMPTS must be an integer >= 1, got '3'.\n"
+    assert err == "r3trace: SCHEMA_MAX_ATTEMPTS must be an integer >= 1, got '3'.\n"
     assert scripted.requests == []
     assert list(tmp_path.iterdir()) == []
 
 
 def test_verbose_streams_stage_progress_to_stderr(answering, capsys):
-    assert r3con("run", "Who?", str(MEMOS), "--summary-rounds", "1", "-v") == 0
+    assert r3trace("run", "Who?", str(MEMOS), "--summary-rounds", "1", "-v") == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     assert "stage 1/3" in err
@@ -508,9 +512,9 @@ def test_a_failed_run_shows_no_key_on_stderr(answering, capsys):
         f"Incorrect API key provided: {KEY}", llm_provider="openai", model="m"
     )
     answering.answers(relevance=bad_key)
-    assert r3con("run", "Who?", str(MEMOS), "--api-key", KEY, "-v") == 1
+    assert r3trace("run", "Who?", str(MEMOS), "--api-key", KEY, "-v") == 1
     err = capsys.readouterr().err
-    assert "r3con: AuthenticationError: " in err
+    assert "r3trace: AuthenticationError: " in err
     assert "Incorrect API key provided: REDACTED" in err
     assert KEY not in err
 
@@ -538,7 +542,7 @@ def test_a_run_shows_its_label_with_the_credentials_in_its_params_masked(
 ):
     default = load_config().model_dump(exclude={"name", "overrides"})
     configs(keyed={**default, "params": params})
-    assert r3con("run", "Who?", str(MEMOS), "--config", "keyed") == 0
+    assert r3trace("run", "Who?", str(MEMOS), "--config", "keyed") == 0
     err = capsys.readouterr().err
     assert shown in err
     assert KEY not in err
@@ -553,16 +557,16 @@ def test_a_refused_setting_that_quotes_a_key_shows_it_masked(
     scripted, capsys, monkeypatch, argv
 ):
     monkeypatch.setenv("OPENAI_API_KEY", KEY)
-    monkeypatch.setenv("R3CON_DOC_WORKERS", KEY)
-    assert r3con(*argv) == 2
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", KEY)
+    assert r3trace(*argv) == 2
     assert capsys.readouterr().err == (
-        "r3con: R3CON_DOC_WORKERS must be an integer >= 1, got 'REDACTED'.\n"
+        "r3trace: R3TRACE_DOC_WORKERS must be an integer >= 1, got 'REDACTED'.\n"
     )
 
 
-def test_r3con_and_its_cli_import_none_of_the_apps_dependencies():
+def test_r3trace_and_its_cli_import_none_of_the_apps_dependencies():
     imports = (
-        "import sys, r3con, r3con.cli; r3con.cli.build_parser(); "
+        "import sys, r3trace, r3trace.cli; r3trace.cli.build_parser(); "
         f"print(sorted(set({APP_MODULES!r}) & set(sys.modules)))"
     )
     loaded = subprocess.run(
@@ -572,27 +576,27 @@ def test_r3con_and_its_cli_import_none_of_the_apps_dependencies():
 
 
 def unimportable(monkeypatch: pytest.MonkeyPatch, *packages: str) -> None:
-    """As if ``packages`` were not installed and ``r3con.app`` not yet imported: no
+    """As if ``packages`` were not installed and ``r3trace.app`` not yet imported: no
     module of theirs imports, cached or not."""
     for name in [*packages, *sys.modules]:
         if any(name == p or name.startswith(f"{p}.") for p in packages):
             monkeypatch.setitem(sys.modules, name, None)
-    for name in ("r3con.app", "r3con.app.server"):
+    for name in ("r3trace.app", "r3trace.app.server"):
         monkeypatch.delitem(sys.modules, name, raising=False)
 
 
 def test_the_app_without_its_extra_says_how_to_get_it_and_exits_1(monkeypatch, capsys):
     unimportable(monkeypatch, *APP_MODULES)
-    assert r3con("app", "--no-browser") == 1
+    assert r3trace("app", "--no-browser") == 1
     assert capsys.readouterr().err == NO_APP_EXTRA
 
 
-def test_a_missing_module_of_r3cons_own_is_raised_not_blamed_on_the_extra(
+def test_a_missing_module_of_r3traces_own_is_raised_not_blamed_on_the_extra(
     monkeypatch, capsys
 ):
-    unimportable(monkeypatch, "r3con.runs")
-    with pytest.raises(ModuleNotFoundError, match="r3con.runs"):
-        r3con("app", "--no-browser")
+    unimportable(monkeypatch, "r3trace.runs")
+    with pytest.raises(ModuleNotFoundError, match="r3trace.runs"):
+        r3trace("app", "--no-browser")
     assert capsys.readouterr().err == ""
 
 
@@ -601,18 +605,18 @@ def test_a_missing_module_of_r3cons_own_is_raised_not_blamed_on_the_extra(
 def test_the_app_on_a_busy_port_says_so_in_one_line_and_exits_2(capsys):
     with socket.create_server(("127.0.0.1", 0)) as taken:
         port = taken.getsockname()[1]
-        assert r3con("app", "--no-browser", "--port", str(port)) == 2
+        assert r3trace("app", "--no-browser", "--port", str(port)) == 2
     err = capsys.readouterr().err
-    assert err.startswith(f"r3con: can't listen on port {port}: ")
+    assert err.startswith(f"r3trace: can't listen on port {port}: ")
     assert "Address already in use" in err
     assert err.count("\n") == 1
 
 
-def test_python_m_r3con_is_the_command_line(monkeypatch):
+def test_python_m_r3trace_is_the_command_line(monkeypatch):
     # The same width for both, which argparse wraps the help to.
     monkeypatch.setenv("COLUMNS", "100")
     shown = subprocess.run(
-        [sys.executable, "-m", "r3con", "--help"],
+        [sys.executable, "-m", "r3trace", "--help"],
         capture_output=True,
         text=True,
         check=True,
@@ -623,18 +627,18 @@ def test_python_m_r3con_is_the_command_line(monkeypatch):
 @pytest.mark.parametrize(
     ("variable", "flag", "runs"),
     [
-        (None, None, platformdirs.user_data_path("r3con") / "runs"),
+        (None, None, platformdirs.user_data_path("r3trace") / "runs"),
         ("from-variable", None, "from-variable"),
         ("from-variable", "from-flag", "from-flag"),
     ],
-    ids=["user-data", "r3con-logs-dir", "logs-dir-flag"],
+    ids=["user-data", "r3trace-logs-dir", "logs-dir-flag"],
 )
 def test_the_app_says_where_its_runs_go(monkeypatch, variable, flag, runs):
     if variable is not None:
-        monkeypatch.setenv("R3CON_LOGS_DIR", variable)
+        monkeypatch.setenv("R3TRACE_LOGS_DIR", variable)
     flags = [] if flag is None else ["--logs-dir", flag]
     app = subprocess.Popen(
-        [sys.executable, "-m", "r3con.cli", "app", "--no-browser", *flags],
+        [sys.executable, "-m", "r3trace.cli", "app", "--no-browser", *flags],
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
         text=True,
@@ -648,13 +652,13 @@ def test_the_app_says_where_its_runs_go(monkeypatch, variable, flag, runs):
         watchdog.cancel()
         app.kill()
         app.wait()
-    assert url.startswith("r3con app: http://127.0.0.1:")
-    assert where == f"r3con app: runs go to {runs}\n"
+    assert url.startswith("r3trace app: http://127.0.0.1:")
+    assert where == f"r3trace app: runs go to {runs}\n"
 
 
 @contextlib.contextmanager
 def started_app(*program: str, logs_dir: Path) -> Iterator[subprocess.Popen[str]]:
-    """``r3con app``, as ``program`` runs it, serving without a browser: killed on
+    """``r3trace app``, as ``program`` runs it, serving without a browser: killed on
     leaving, or after ``LAUNCH_SECONDS``, so that a hang fails the test."""
     with subprocess.Popen(
         [*program, "app", "--no-browser", "--logs-dir", str(logs_dir)],
@@ -689,7 +693,10 @@ def ctrl_c(app: subprocess.Popen[str]) -> int:
 
 @pytest.mark.enable_socket
 @pytest.mark.allow_hosts(["127.0.0.1"])
-def test_r3con_app_keeps_its_keys_under_r3con_never_the_mac_apps(tmp_path, monkeypatch):
+def test_r3trace_app_keeps_its_keys_under_r3con_never_the_mac_apps(
+    tmp_path, monkeypatch
+):
+    assert APP_KEY_SERVICE == "r3con"
     store = tmp_path / "keyring.json"
     stored = {APP_KEY_SERVICE: {"openai": KEY}, MAC_APP_KEY_SERVICE: {"gemini": KEY}}
     store.write_text(json.dumps(stored))
@@ -697,7 +704,7 @@ def test_r3con_app_keeps_its_keys_under_r3con_never_the_mac_apps(tmp_path, monke
     monkeypatch.setenv(KEYRING_FILE, str(store))
     monkeypatch.setenv("PYTHONPATH", str(REPO))
     with (
-        started_app(sys.executable, "-m", "r3con.cli", logs_dir=tmp_path) as app,
+        started_app(sys.executable, "-m", "r3trace.cli", logs_dir=tmp_path) as app,
         client_of(app) as http,
     ):
         loaded = http.get("/api/keys").json()
@@ -712,13 +719,13 @@ def test_r3con_app_keeps_its_keys_under_r3con_never_the_mac_apps(tmp_path, monke
 def test_ctrl_c_with_nothing_in_flight_quits_the_app_cleanly_within_its_bound(
     tmp_path,
 ):
-    with started_app(sys.executable, "-m", "r3con.cli", logs_dir=tmp_path) as app:
+    with started_app(sys.executable, "-m", "r3trace.cli", logs_dir=tmp_path) as app:
         with client_of(app) as http:
             assert http.get("/api/keys").status_code == 200
         exit_code = ctrl_c(app)
         out, err = app.communicate()
     assert exit_code == 0
-    assert "r3con app: quitting" not in out
+    assert "r3trace app: quitting" not in out
     assert "Traceback" not in err
 
 
@@ -750,18 +757,18 @@ def test_ctrl_c_quits_the_app_within_its_bound_though_a_model_call_never_returns
 
 
 def stopped_run(llm, capsys, *argv: str) -> tuple[Path, str]:
-    """The folder of an ``r3con run`` over the memos, with ``argv``, that ``llm``
+    """The folder of an ``r3trace run`` over the memos, with ``argv``, that ``llm``
     fails in Riverside's parse, and what it said on stderr."""
     llm.answers(parsing=failing_once(reading(RIVERSIDE), ANSWERING["parsing"]))
-    assert r3con("run", "Who?", str(MEMOS), *argv) == 1
+    assert r3trace("run", "Who?", str(MEMOS), *argv) == 1
     err = capsys.readouterr().err
     return path_after("artifacts: ", err), err
 
 
 def carrying_on(run_dir: Path, *sources: str, options: tuple = ()) -> str:
     """The line that says how to carry on the run in ``run_dir``."""
-    command = shlex.join(["r3con", "resume", str(run_dir), *sources, *options])
-    return f"r3con: to carry on: {command}"
+    command = shlex.join(["r3trace", "resume", str(run_dir), *sources, *options])
+    return f"r3trace: to carry on: {command}"
 
 
 def test_a_stopped_run_says_how_to_carry_on_and_the_command_pasted_finishes_it(
@@ -771,13 +778,13 @@ def test_a_stopped_run_says_how_to_carry_on_and_the_command_pasted_finishes_it(
     shutil.copytree(MEMOS, sources)
     logs = tmp_path / "run logs"
     answering.answers(parsing=failing_once(reading(RIVERSIDE), ANSWERING["parsing"]))
-    assert r3con("run", "Who?", str(sources), "--logs-dir", str(logs)) == 1
+    assert r3trace("run", "Who?", str(sources), "--logs-dir", str(logs)) == 1
     err = capsys.readouterr().err
     run_dir = path_after("artifacts: ", err)
     assert err.splitlines()[-1] == carrying_on(run_dir, str(sources))
-    pasted = shlex.split(err.splitlines()[-1].removeprefix("r3con: to carry on: "))
+    pasted = shlex.split(err.splitlines()[-1].removeprefix("r3trace: to carry on: "))
     sent = len(answering.requests)
-    assert r3con(*pasted[1:]) == 0
+    assert r3trace(*pasted[1:]) == 0
     out, err = capsys.readouterr()
     assert out == f"{ANSWER}\n"
     assert path_after("artifacts: ", err) == run_dir.resolve()
@@ -798,15 +805,15 @@ def test_the_command_to_carry_on_keeps_its_options_and_names_but_hides_the_key(
 
 def test_no_artifacts_has_no_run_to_carry_on(answering, capsys):
     answering.answers(parsing=failing_once(reading(RIVERSIDE), ANSWERING["parsing"]))
-    assert r3con("run", "Who?", str(MEMOS), "--no-artifacts") == 1
+    assert r3trace("run", "Who?", str(MEMOS), "--no-artifacts") == 1
     assert "to carry on" not in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
     ("stopping", "code", "said"),
     [
-        (bad_key(), 1, "r3con: AuthenticationError: "),
-        (KeyboardInterrupt(), 130, "r3con: interrupted.\n"),
+        (bad_key(), 1, "r3trace: AuthenticationError: "),
+        (KeyboardInterrupt(), 130, "r3trace: interrupted.\n"),
     ],
     ids=["failed", "interrupted"],
 )
@@ -815,7 +822,7 @@ def test_a_stopped_resume_says_how_to_carry_on_again(
 ):
     run_dir, _ = stopped_run(answering, capsys)
     answering.answers(reasoning=stopping)
-    assert r3con("resume", str(run_dir), str(MEMOS)) == code
+    assert r3trace("resume", str(run_dir), str(MEMOS)) == code
     err = capsys.readouterr().err
     assert said in err
     assert err.endswith(f"{carrying_on(run_dir.resolve(), str(MEMOS))}\n")
@@ -825,17 +832,17 @@ def test_a_value_error_on_the_way_is_a_failure_not_a_refusal(answering, capsys):
     answering.answers(
         relevance=failing_once(reading(RIVERSIDE), ANSWERING["relevance"])
     )
-    assert r3con("run", "Who?", str(MEMOS)) == 1
+    assert r3trace("run", "Who?", str(MEMOS)) == 1
     run_dir = path_after("artifacts: ", capsys.readouterr().err)
     answering.answers(schema="Thought: none.\n<schema>\nnot a schema\n</schema>")
-    assert r3con("resume", str(run_dir), str(MEMOS)) == 1
+    assert r3trace("resume", str(run_dir), str(MEMOS)) == 1
     err = capsys.readouterr().err
-    assert "r3con: SchemaError: propose_schema exhausted" in err
+    assert "r3trace: SchemaError: propose_schema exhausted" in err
     assert err.endswith(f"{carrying_on(run_dir.resolve(), str(MEMOS))}\n")
 
 
 def resumed_to_the_end(run_dir: Path) -> None:
-    assert r3con("resume", str(run_dir), str(MEMOS)) == 0
+    assert r3trace("resume", str(run_dir), str(MEMOS)) == 0
 
 
 @pytest.mark.parametrize(
@@ -844,7 +851,7 @@ def resumed_to_the_end(run_dir: Path) -> None:
         (
             resumed_to_the_end,
             [str(MEMOS)],
-            "this run finished; ask it a new question instead (r3con ask, or r3con.ask).",
+            "this run finished; ask it a new question instead (r3trace ask, or r3trace.ask).",
         ),
         (predating_resume, [str(MEMOS)], "this run predates resume"),
         (
@@ -858,7 +865,7 @@ def resumed_to_the_end(run_dir: Path) -> None:
             (
                 "pass --api-key or --base-url in place of a masked `api_key` or "
                 "`api_base`; any other masked param can be passed again only through "
-                "r3con.resume's `params`. Masked params: `extra_headers.Authorization`."
+                "r3trace.resume's `params`. Masked params: `extra_headers.Authorization`."
             ),
         ),
         (
@@ -876,10 +883,10 @@ def test_a_resume_it_cannot_carry_on_exits_2_in_one_line(
     change(run_dir)
     capsys.readouterr()
     sent = len(answering.requests)
-    assert r3con("resume", str(run_dir), *sources) == 2
+    assert r3trace("resume", str(run_dir), *sources) == 2
     out, err = capsys.readouterr()
     assert (out, err.count("\n")) == ("", 1)
-    assert err.startswith("r3con: ")
+    assert err.startswith("r3trace: ")
     assert said in err
     assert len(answering.requests) == sent
 
@@ -887,10 +894,10 @@ def test_a_resume_it_cannot_carry_on_exits_2_in_one_line(
 def test_a_resume_of_a_run_still_going_exits_2_in_one_line(answering, capsys):
     run_dir, _ = stopped_run(answering, capsys)
     with run_lock(run_dir):
-        assert r3con("resume", str(run_dir), str(MEMOS)) == 2
+        assert r3trace("resume", str(run_dir), str(MEMOS)) == 2
     err = capsys.readouterr().err
     assert err.endswith(
-        f"r3con: {run_dir.resolve()}: a run or resume is going in it; carry it on "
+        f"r3trace: {run_dir.resolve()}: a run or resume is going in it; carry it on "
         "once that one has stopped.\n"
     )
 
@@ -899,9 +906,9 @@ def test_a_mistyped_run_folder_is_refused_before_any_document_is_read(
     scripted, tmp_path, capsys
 ):
     typo = tmp_path / "logs" / "2026111"
-    assert r3con("resume", str(typo), str(tmp_path / "no documents here")) == 2
+    assert r3trace("resume", str(typo), str(tmp_path / "no documents here")) == 2
     assert capsys.readouterr().err == (
-        f"r3con: {typo} is not a run folder: it has no manifest.json.\n"
+        f"r3trace: {typo} is not a run folder: it has no manifest.json.\n"
     )
     assert scripted.requests == []
 
@@ -912,12 +919,12 @@ def test_a_resume_given_an_asks_folder_carries_on_the_run_it_asked_over(
     answering.answers(
         reasoning=failing_once(lambda request: True, ANSWERING["reasoning"])
     )
-    assert r3con("run", "Who?", str(MEMOS)) == 1
+    assert r3trace("run", "Who?", str(MEMOS)) == 1
     run_dir = path_after("artifacts: ", capsys.readouterr().err).resolve()
-    assert r3con("ask", str(run_dir), "Who else?") == 0
+    assert r3trace("ask", str(run_dir), "Who else?") == 0
     asked = path_after("artifacts: ", capsys.readouterr().err)
     answering.answers(reasoning=bad_key())
-    assert r3con("resume", str(asked), str(MEMOS)) == 1
+    assert r3trace("resume", str(asked), str(MEMOS)) == 1
     err = capsys.readouterr().err
     assert path_after("artifacts: ", err) == run_dir
     assert err.endswith(f"{carrying_on(run_dir, str(MEMOS))}\n")
@@ -926,5 +933,5 @@ def test_a_resume_given_an_asks_folder_carries_on_the_run_it_asked_over(
 def test_a_resume_over_a_masked_api_key_sends_the_one_given(answering, capsys):
     run_dir, _ = stopped_run(answering, capsys)
     saving_params(run_dir, {"api_key": "REDACTED"})
-    assert r3con("resume", str(run_dir), str(MEMOS), "--api-key", KEY) == 0
+    assert r3trace("resume", str(run_dir), str(MEMOS), "--api-key", KEY) == 0
     assert answering.requests[-1]["api_key"] == KEY

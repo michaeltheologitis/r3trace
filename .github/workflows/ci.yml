@@ -15,7 +15,7 @@ on:
         type: boolean
         default: false
       eval:
-        description: Also run the eval, r3con on 75 pinned tasks (about $3, bills OPENAI_API_KEY)
+        description: Also run the eval, r3trace on 75 pinned tasks (about $3, bills OPENAI_API_KEY)
         type: boolean
         default: false
   workflow_call:
@@ -61,7 +61,7 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
-      - run: uv run --locked pytest --cov=r3con --cov-report=term-missing:skip-covered
+      - run: uv run --locked pytest --cov=r3trace --cov-report=term-missing:skip-covered
 
   lowest:
     runs-on: ubuntu-latest
@@ -94,7 +94,7 @@ jobs:
       - name: The suite, against the installed wheel
         working-directory: ${{ runner.temp }}
         run: |
-          "$GITHUB_WORKSPACE/.venv/bin/python" -c "import r3con, sys; sys.exit(0 if '/site-packages/' in r3con.__file__ else f'testing {r3con.__file__}, not the wheel')"
+          "$GITHUB_WORKSPACE/.venv/bin/python" -c "import r3trace, sys; sys.exit(0 if '/site-packages/' in r3trace.__file__ else f'testing {r3trace.__file__}, not the wheel')"
           "$GITHUB_WORKSPACE/.venv/bin/python" -m pytest "$GITHUB_WORKSPACE/tests"
 
   live:

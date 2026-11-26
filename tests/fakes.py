@@ -18,8 +18,8 @@ from keyring.errors import PasswordDeleteError
 from litellm.exceptions import AuthenticationError, ContextWindowExceededError
 from pydantic import BaseModel
 
-from r3con import Answer
-from r3con.provenance import Trail
+from r3trace import Answer
+from r3trace.provenance import Trail
 
 _completion = litellm.completion
 
@@ -79,7 +79,7 @@ SEARCH = "https://memos.search.windows.net"
 # A key of unquoted digits, which YAML reads as an integer.
 DIGITS_KEY = 123456789012345678
 # Where a process a test starts finds FileKeyring's file.
-KEYRING_FILE = "R3CON_TEST_KEYRING_FILE"
+KEYRING_FILE = "R3TRACE_TEST_KEYRING_FILE"
 # Below keyring's null store's, -1, and its failing one's, 0.
 BELOW_ANY_PICKED = -2
 WALK_KEYS = tuple(Trail.__annotations__)
@@ -109,7 +109,7 @@ def _schema_name(request: Request) -> str | None:
 
 
 def stage_of(request: Request) -> Stage:
-    """The pipeline stage that built ``request``, read from the shape r3con gives it."""
+    """The pipeline stage that built ``request``, read from the shape r3trace gives it."""
     if "response_format" in request:
         schema = request["response_format"]["json_schema"]["name"]
         by_schema: dict[str, Stage] = {

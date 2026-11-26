@@ -2,14 +2,14 @@ import re
 
 import pytest
 
-from r3con import settings
-from r3con.settings import active_doc_workers, settings_snapshot
-from r3con.splitting import Splits
+from r3trace import settings
+from r3trace.settings import active_doc_workers, settings_snapshot
+from r3trace.splitting import Splits
 
 
 def test_the_snapshot_holds_each_cap_as_set_when_it_is_taken(monkeypatch):
     monkeypatch.setattr(settings, "SCHEMA_MAX_ATTEMPTS", 2)
-    monkeypatch.setenv("R3CON_DOC_WORKERS", "3")
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", "3")
     snapshot = settings_snapshot()
     assert (snapshot["schema_max_attempts"], snapshot["doc_workers"]) == (2, 3)
     assert settings_snapshot(reasoning_max_turns=4)["reasoning_max_turns"] == 4
@@ -77,8 +77,8 @@ def test_a_cap_that_is_not_an_integer_is_refused(monkeypatch, value):
 
 @pytest.mark.parametrize("raw", ["abc", "0"])
 def test_a_bad_doc_workers_variable_is_refused_naming_it(monkeypatch, raw):
-    monkeypatch.setenv("R3CON_DOC_WORKERS", raw)
-    with pytest.raises(ValueError, match="^R3CON_DOC_WORKERS "):
+    monkeypatch.setenv("R3TRACE_DOC_WORKERS", raw)
+    with pytest.raises(ValueError, match="^R3TRACE_DOC_WORKERS "):
         active_doc_workers()
 
 

@@ -2,7 +2,7 @@ import unicodedata
 
 import pytest
 
-from r3con.quotes import FUZZY_MIN_SCORE, MIN_ELIDED_FRAGMENT_CHARS, locate_quotes
+from r3trace.quotes import FUZZY_MIN_SCORE, MIN_ELIDED_FRAGMENT_CHARS, locate_quotes
 
 DECOMPOSED = unicodedata.normalize("NFD", "Café au lait")
 HANGUL = unicodedata.normalize("NFD", "한국어 문서")

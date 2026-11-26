@@ -8,7 +8,7 @@ from pathlib import Path
 import litellm
 import pytest
 
-from r3con import read_documents, run
+from r3trace import read_documents, run
 
 MEMOS = Path(__file__).resolve().parents[1] / "examples" / "memos"
 QUESTION = (

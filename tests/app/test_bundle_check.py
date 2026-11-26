@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from r3con.app import serve
+from r3trace.app import serve
 from tests.app.bundle_check import (
     ENCRYPTED_PDF_TEXT,
     built_by,
@@ -43,7 +43,7 @@ uv-build==0.9.30 \\
     --hash=sha256:14ac36cb0ccdc7a847e3d41903eb5d0091db4f5efcd34e693da82d6484fc5539
 """
 # What CONSTRAINTS pins here, and the project.
-LOCKED = {"r3context": "0.6.10", "Charset_Normalizer": "3.5.1", "soupsieve": "3.0.4"}
+LOCKED = {"r3trace": "0.6.10", "Charset_Normalizer": "3.5.1", "soupsieve": "3.0.4"}
 
 
 def app_packages(
@@ -106,7 +106,7 @@ def test_pinned_exits_on_a_package_at_a_version_uv_lock_does_not_pin_here(
 def test_pinned_exits_on_a_locked_package_the_bundle_lacks(
     tmp_path: Path, constraints: Path
 ) -> None:
-    packages = app_packages(tmp_path, {"r3context": "0.6.10", "soupsieve": "3.0.4"})
+    packages = app_packages(tmp_path, {"r3trace": "0.6.10", "soupsieve": "3.0.4"})
     problem = "charset-normalizer: uv.lock pins ==3.5.1, but it is missing"
     with pytest.raises(SystemExit, match=re.escape(problem)):
         pinned(packages, constraints)
@@ -115,15 +115,15 @@ def test_pinned_exits_on_a_locked_package_the_bundle_lacks(
 def test_built_by_names_the_locked_backend(
     tmp_path: Path, build_constraints: Path
 ) -> None:
-    packages = app_packages(tmp_path, {"r3context": "0.6.10"})
+    packages = app_packages(tmp_path, {"r3trace": "0.6.10"})
     assert built_by(packages, build_constraints) == "uv 0.9.30"
 
 
 def test_built_by_exits_on_another_backend_version(
     tmp_path: Path, build_constraints: Path
 ) -> None:
-    packages = app_packages(tmp_path, {"r3context": "0.6.10"}, generator="uv 0.9.31")
-    problem = "r3context was built by uv 0.9.31, but uv.lock pins uv-build ==0.9.30"
+    packages = app_packages(tmp_path, {"r3trace": "0.6.10"}, generator="uv 0.9.31")
+    problem = "r3trace was built by uv 0.9.31, but uv.lock pins uv-build ==0.9.30"
     with pytest.raises(SystemExit, match=re.escape(problem)):
         built_by(packages, build_constraints)
 
@@ -208,7 +208,7 @@ def test_loads_imports_a_python_extension_but_only_loads_a_plain_library(
 
 
 FEED = (
-    "https://github.com/michaeltheologitis/r3con/releases/latest/download/appcast.xml"
+    "https://github.com/michaeltheologitis/r3trace/releases/latest/download/appcast.xml"
 )
 UPDATES_INFO = {
     "SUFeedURL": FEED,
@@ -218,7 +218,7 @@ UPDATES_INFO = {
 # As `codesign --display --verbose=2` describes signatures of Sparkle's Autoupdate, on
 # its stderr: by a Developer ID, and ad hoc.
 SIGNED_BY_DEVELOPER_ID = """\
-Executable=/Applications/R3Con.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate
+Executable=/Applications/R3Trace.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate
 Identifier=Autoupdate
 Format=Mach-O universal (x86_64 arm64)
 CodeDirectory v=20500 size=6214 flags=0x10000(runtime) hashes=183+7 location=embedded
@@ -234,7 +234,7 @@ Sealed Resources=none
 Internal requirements count=1 size=224
 """
 SIGNED_AD_HOC = """\
-Executable=/Applications/R3Con.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate
+Executable=/Applications/R3Trace.app/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate
 Identifier=Autoupdate-55554944ee6295b05bf83d4f87e17bb073d143e6
 Format=Mach-O universal (x86_64 arm64)
 CodeDirectory v=20400 size=2676 flags=0x2(adhoc) hashes=77+2 location=embedded

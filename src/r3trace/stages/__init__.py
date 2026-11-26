@@ -1,0 +1,12 @@
+"""Pipeline stages — the three moves the method makes.
+
+- :mod:`r3trace.stages.relevance` — stage 1, surfacing relevance: the per-document
+  relevance summaries, built over synchronous cross-document rounds.
+- :mod:`r3trace.stages.structuring` — stage 2, structuring: propose the schema, then
+  parse into it every document relevance did not prune.
+- :mod:`r3trace.stages.reasoning` — stage 3, reasoning: answer over the structured
+  parse and the relevant context.
+
+After them, :mod:`r3trace.stages.claims` links each claim of the answer to the evidence
+on its trail that supports it.
+"""

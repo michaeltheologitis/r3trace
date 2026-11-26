@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from r3con import Answer, Cancelled, ask, resume, run, settings, trace
-from r3con.config import EVIDENCE_LEVELS
-from r3con.provenance import RULES
+from r3trace import Answer, Cancelled, ask, resume, run, settings, trace
+from r3trace.config import EVIDENCE_LEVELS
+from r3trace.provenance import RULES
 from tests.fakes import (
     ANSWERING,
     TWO_LINE_MEMOS,
@@ -439,7 +439,7 @@ def test_a_sentence_the_answer_repeats_is_claimed_where_each_claim_makes_it(
 def test_a_claim_overlapping_one_placed_is_dropped_with_a_warning(
     quoting_llm, tmp_path, caplog, claims, kept
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     result = claimed(quoting_llm, tmp_path, *((text, []) for text in claims))
     assert [claim["text"] for claim in result.provenance["claims"]] == kept
     overlapping = claims[-1]
@@ -451,7 +451,7 @@ def test_a_claim_overlapping_one_placed_is_dropped_with_a_warning(
 def test_an_id_the_call_did_not_show_is_dropped_with_a_warning(
     quoting_llm, tmp_path, caplog
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     result = claimed(quoting_llm, tmp_path, (HALLORAN, ["q9", "q2", "a1b2c3"]))
     [claim] = result.provenance["claims"]
     assert claim["quotes"] == [place(result.provenance["relevant_trail"]["quotes"][1])]
@@ -463,7 +463,7 @@ def test_an_id_the_call_did_not_show_is_dropped_with_a_warning(
 def test_a_claim_the_answer_does_not_make_is_dropped_with_a_warning(
     quoting_llm, tmp_path, caplog
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     result = claimed(
         quoting_llm,
         tmp_path,
@@ -546,7 +546,7 @@ def test_an_answer_whose_trail_holds_no_evidence_makes_no_claims_call(
 def test_a_claims_request_over_the_models_line_is_not_sent(
     quoting_llm, window, tmp_path, caplog, events_in
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     quoting_llm.answers(reasoning=citing(LONG_ANSWER, slice(None)))
     result = run_memos(quoting_llm, tmp_path, model=window(WINDOW_TOKENS))
     assert result.answer == LONG_ANSWER
@@ -562,7 +562,7 @@ def test_a_claims_request_over_the_models_line_is_not_sent(
 def test_a_linking_request_over_the_models_line_leaves_only_its_claim_unlinked(
     quoting_llm, window, tmp_path, caplog
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     quoting_llm.answers(reasoning=citing(f"{HALLORAN} {LONG_CLAIM}", slice(None)))
     result = claimed(
         quoting_llm,
@@ -599,7 +599,7 @@ def test_a_linking_request_over_the_models_line_leaves_only_its_claim_unlinked(
 def test_a_claims_call_that_fails_leaves_no_claims_and_the_run_finishes(
     quoting_llm, tmp_path, caplog, events_in, reply, sends, error
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     quoting_llm.answers(claims=reply)
     result = run_memos(quoting_llm, tmp_path)
     assert result.answer == ANSWER
@@ -632,7 +632,7 @@ def test_a_claims_call_that_fails_leaves_no_claims_and_the_run_finishes(
 def test_a_linking_call_that_fails_leaves_only_its_claim_unlinked(
     quoting_llm, tmp_path, caplog, events_in, reply, sends, error
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     links = linking_reply({HALLORAN: ["q2"]})
 
     def linking(request):
@@ -668,7 +668,7 @@ def test_a_linking_call_that_fails_leaves_only_its_claim_unlinked(
 def test_a_cancel_during_the_claims_call_leaves_no_claims_and_finishes_the_run(
     quoting_llm, tmp_path, caplog, events_in
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     cancel = threading.Event()
     # A reply that does not fit, which the call would send again but for the cancel.
     quoting_llm.answers(claims=cancelling(cancel, "not JSON"))
@@ -687,7 +687,7 @@ def test_a_cancel_during_the_claims_call_leaves_no_claims_and_finishes_the_run(
 def test_a_cancel_during_a_linking_call_leaves_its_claim_and_those_after_unlinked(
     quoting_llm, tmp_path, caplog, events_in, one_worker
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     cancel = threading.Event()
     links = linking_reply({HALLORAN: ["q2"]})
 
@@ -834,7 +834,7 @@ def without_an_evidence_trail(folder: Path) -> None:
 
 
 def without_claims(folder: Path) -> None:
-    """A folder an r3con made before claims."""
+    """A folder an r3trace made before claims."""
     shutil.rmtree(folder / "claims")
 
 
@@ -925,7 +925,7 @@ def test_a_run_stopped_before_its_claims_finished_resumes_from_reasoning(
 
 
 def as_before_claims(manifest: dict) -> None:
-    """A run's manifest as r3con wrote one before it made claims."""
+    """A run's manifest as r3trace wrote one before it made claims."""
     del manifest["config"]["claims"]
     for stage in ("claims", "linking"):
         del manifest["config"]["prompts"][stage]

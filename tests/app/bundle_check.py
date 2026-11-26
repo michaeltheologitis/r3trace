@@ -7,7 +7,7 @@ It puts the app's code and packages on the path as the app's launcher does, and 
 that the packages there but the project are exactly the ones CONSTRAINTS, the build's
 `uv export` of uv.lock, pins for this Python, at its versions, and that the project was
 built by the backend BUILD_CONSTRAINTS pins. Then it imports, each from inside APP,
-r3con and the packages a bundle most likely lacks, and loads every compiled file under
+r3trace and the packages a bundle most likely lacks, and loads every compiled file under
 its packages, importing those that are Python extensions, so that one built for another
 platform fails here. It checks that keyring,
 where the app keeps its keys, finds the macOS Keychain, and saves, reads back and
@@ -16,9 +16,10 @@ dialog would wait for a click no one makes. Then it serves the app as the window
 the page, and the API with this launch's token, must answer, a PDF encrypted as signed
 ones often are must read back as its text, which pypdf does only with an AES library
 (here pycryptodome: cryptography is Linux-only), and once the server has stopped,
-nothing must. Last, it checks the app's updates: its Info.plist must give Sparkle an
-https feed and the app's version to compare, and Sparkle's code must be signed as
-Sparkle's docs sign it. That the app starts Sparkle, its key and all, the window's
+nothing must. Last, it checks the app's Info.plist: its bundle identifier must be the
+Keychain service the app keeps its keys under, and it must give Sparkle an https feed
+and the app's version to compare; and Sparkle's code must be signed as Sparkle's docs
+sign it. That the app starts Sparkle, its key and all, the window's
 launch in mac-app.yml checks.
 """
 
@@ -46,7 +47,7 @@ if TYPE_CHECKING:
     from packaging.specifiers import SpecifierSet
 
 BUNDLED = (
-    "r3con",
+    "r3trace",
     "litellm",
     "pydantic_core",
     "tokenizers",
@@ -63,9 +64,9 @@ BUNDLED = (
 TIMEOUT_SECONDS = 10
 KEYCHAIN_SECONDS = 30
 # Not the app's service, so that the check never touches a key the app saved.
-THROWAWAY_SERVICE = "r3con-bundle-check"
+THROWAWAY_SERVICE = "r3trace-bundle-check"
 # Built from the checkout, so not among uv.lock's exported pins: its backend is.
-PROJECT = "r3context"
+PROJECT = "r3trace"
 BACKEND = "uv-build"
 # What encrypted_pdf's PDF says, which the server must read back from it.
 ENCRYPTED_PDF_TEXT = "Read through AES-256."
@@ -319,11 +320,11 @@ def main(app: Path, constraints: Path, build_constraints: Path) -> None:
     round_trip(store)
     print(f"{THROWAWAY_SERVICE}: saved, read back and deleted in the Keychain")
 
-    from r3con import __version__
-    from r3con.app import serve
-    from r3con.app.server import MAC_APP_KEY_SERVICE
+    from r3trace import __version__
+    from r3trace.app import serve
+    from r3trace.app.server import MAC_APP_KEY_SERVICE
 
-    print(f"r3con {__version__}")
+    print(f"r3trace {__version__}")
     url, stop = serve(
         logs_dir=Path(tempfile.mkdtemp()), key_service=MAC_APP_KEY_SERVICE
     )
@@ -346,6 +347,10 @@ def main(app: Path, constraints: Path, build_constraints: Path) -> None:
         sys.exit("the server still answers after its stop")
     print("stopped: nothing answers")
     info = plistlib.loads((app / "Contents" / "Info.plist").read_bytes())
+    identifier = info.get("CFBundleIdentifier")
+    if identifier != MAC_APP_KEY_SERVICE:
+        sys.exit(f"CFBundleIdentifier is {identifier!r}, not {MAC_APP_KEY_SERVICE!r}")
+    print(f"CFBundleIdentifier is {identifier}, the app's Keychain service")
     print(f"Sparkle checks {update_feed(info)} for a version after {__version__}")
     for signed in sparkle_signed(app):
         print(f"{signed}: signed as Sparkle's docs sign it")

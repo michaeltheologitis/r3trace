@@ -1,0 +1,390 @@
+"""The run config: every knob that shapes the OUTPUT, in one place.
+
+A :class:`RunConfig` is the **identity of a run** — the model, number of summary
+rounds, the reasoning path, the evidence level, whether it finds the answer's claims,
+the prompt version of each stage, and any generation params.
+It is loaded from a bundled ``configs/<name>.yaml`` (with optional overrides) and flows
+through the whole pipeline as one object, so nothing output-affecting is threaded ad-hoc.
+Runtime-only knobs (parallelism, paths, retry caps, timeouts) stay in
+:mod:`r3trace.settings` — they don't change a correct answer.
+
+Two runs are the same run iff their :meth:`RunConfig.label` matches, so **every**
+output-shaping axis must appear in :meth:`RunConfig._identity_parts` — that function is
+the one place to extend the identity.
+
+``params`` is a plain dict handed **straight to** ``litellm.completion`` — ``temperature``,
+``top_p``, ``extra_body``, anything litellm accepts. There is no r3trace-specific
+vocabulary for generation settings: if litellm takes it, put it there. It shapes the
+output, so it is part of the run's identity.
+
+Configs ship inside the installed package (``src/r3trace/configs/``); they are read-only
+package data, resolved from the package directory.
+
+Config file shape (``configs/<name>.yaml``)::
+
+    model: openai/gpt-6-luna
+    summary_rounds: 2
+    reasoning: direct            # or coding
+    evidence_level: sentence     # or document
+    claims: true                 # or false; left out, whether a claims prompt is pinned
+    prompts:
+      relevance/first-round: v3
+      relevance/later-rounds: v4
+      structuring/schema: v1
+      structuring/parsing: v3
+      reasoning/direct: v3
+      reasoning/coding: v3
+      claims: v3                 # read only when claims are on
+      linking: v1                # read only when claims are on, at the sentence level
+    params:                      # optional; passed straight to litellm.completion
+      temperature: 0.7
+"""
+
+from __future__ import annotations
+
+import os
+import reprlib
+from collections.abc import Collection, Mapping
+from pathlib import Path
+from typing import Annotated, Any, Literal, get_args
+
+import yaml
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+
+from r3trace import settings
+from r3trace.prompts import prompt_variables, require_prompt_path
+
+# The pipeline stages that carry a versioned prompt — a config must pin all of them.
+PromptStage = Literal[
+    "relevance/first-round",
+    "relevance/later-rounds",
+    "structuring/schema",
+    "structuring/parsing",
+    "reasoning/direct",
+    "reasoning/coding",
+    "claims",
+    "linking",
+]
+PROMPT_STAGES: tuple[PromptStage, ...] = get_args(PromptStage)
+
+DEFAULT_CONFIG = "default"
+
+ReasoningPath = Literal["direct", "coding"]
+REASONING_PATHS: tuple[ReasoningPath, ...] = get_args(ReasoningPath)
+
+EvidenceLevel = Literal["sentence", "document"]
+EVIDENCE_LEVELS: tuple[EvidenceLevel, ...] = get_args(EvidenceLevel)
+
+# The prompts a document-level run renders without quotes.
+_LEVELLED_STAGES: tuple[PromptStage, ...] = (
+    "relevance/first-round",
+    "relevance/later-rounds",
+    "claims",
+)
+
+# The fields a config file may set; any other is refused rather than dropped.
+_CONFIG_FIELDS = frozenset(
+    {
+        "model",
+        "summary_rounds",
+        "reasoning",
+        "evidence_level",
+        "claims",
+        "prompts",
+        "params",
+    }
+)
+
+# Compact per-stage abbreviations for the prompts tag in RunConfig.label().
+_PROMPT_STAGE_ABBR: dict[str, str] = {
+    "relevance/first-round": "rel1",
+    "relevance/later-rounds": "rel2",
+    "structuring/schema": "schema",
+    "structuring/parsing": "parse",
+    "reasoning/direct": "direct",
+    "reasoning/coding": "coding",
+    "claims": "claims",
+    "linking": "linking",
+}
+
+
+def normalize_model_name(model: str | None) -> str | None:
+    """Reduce a LiteLLM model string to the bare model name — drop the provider/route
+    prefix, which is *transport*, not identity::
+
+        openai/gpt-6-luna             -> gpt-6-luna
+        hosted_vllm/Qwen/Qwen3.5-35B-A3B -> Qwen3.5-35B-A3B
+        gpt-6-luna                    -> gpt-6-luna   (no prefix → unchanged)
+        None                            -> None
+
+    Used wherever the model is **persisted or shown** (the run label, the manifest's
+    recorded config block, the run header, transcript headers). The *live* call site
+    keeps the full provider-prefixed string — LiteLLM needs it to route."""
+    if not model:
+        return model
+    return model.split("/")[-1]
+
+
+class RunConfig(BaseModel):
+    """Everything that shapes the output of one run (the experiment identity)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # the config it was loaded from (the run label's base)
+    name: str = DEFAULT_CONFIG
+    model: Annotated[str, Field(min_length=1)]
+    # keep in sync with configs/default.yaml (the shipped default); 0 skips relevance
+    summary_rounds: Annotated[int, Field(ge=0, strict=True)] = 2
+    # keep in sync with configs/default.yaml
+    reasoning: ReasoningPath = "direct"
+    # keep in sync with configs/default.yaml
+    evidence_level: EvidenceLevel = "sentence"
+    # keep in sync with configs/default.yaml; left out, see _claims_if_pinned
+    claims: bool = True
+    # {stage: version}; check_prompts refuses a config that leaves a stage unpinned
+    prompts: dict[PromptStage, str] = Field(default_factory=dict)
+    # extra kwargs for litellm.completion
+    params: dict[str, Any] = Field(default_factory=dict)
+    # the overrides applied on load, recorded with the config
+    overrides: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _claims_if_pinned(cls, data: Any) -> Any:
+        """``data`` with ``claims``, when it leaves them out, on if it pins the claims
+        prompt: off for a config, a run's manifest or an app's saved run from before
+        r3trace made claims."""
+        if not isinstance(data, dict) or "claims" in data:
+            return data
+        prompts = data.get("prompts")
+        return {**data, "claims": isinstance(prompts, dict) and "claims" in prompts}
+
+    @property
+    def prompt_stages(self) -> tuple[PromptStage, ...]:
+        """The stages whose prompt this config reads: every one but claims and linking
+        when claims are off, and but linking at the document level, which links no
+        claim to quotes."""
+        unread = set() if self.claims else {"claims", "linking"}
+        if self.evidence_level == "document":
+            unread.add("linking")
+        return tuple(s for s in PROMPT_STAGES if s not in unread)
+
+    def _identity_parts(self) -> list[str]:
+        """The output-shaping components that make up the run identity, in label
+        order, each a ``key=value`` string. **This is the one place to extend the
+        identity** — add a line here and the new axis becomes part of a run's identity.
+        Values are the *resolved* config (not how they were set), so 3 rounds read the
+        same whether they came from the config file or ``--summary-rounds 3``. The
+        model is reduced to its bare name (the provider/route prefix is transport — see
+        :func:`normalize_model_name`)."""
+        prompts = ",".join(
+            f"{_PROMPT_STAGE_ABBR.get(s, s)}={self.prompts[s]}"
+            for s in self.prompt_stages
+            if s in self.prompts
+        )
+        parts = [
+            f"model={normalize_model_name(self.model)}",
+            f"rounds={self.summary_rounds}",
+            f"reasoning={self.reasoning}",
+        ]
+        # Only when not the default, so a sentence-level run's label is as it was.
+        if self.evidence_level != "sentence":
+            parts.append(f"evidence={self.evidence_level}")
+        # Generation params are part of the identity only when set, so a provider-default
+        # run carries no `params=` noise in its label.
+        if self.params:
+            parts.append(
+                "params={"
+                + ",".join(f"{k}={self.params[k]}" for k in sorted(self.params))
+                + "}"
+            )
+        parts.append(f"prompts=({prompts})")
+        return parts
+
+    def label(self) -> str:
+        """Readable run label — a run's identity: the config name plus the run-identity
+        components (:meth:`_identity_parts`). Two runs are the same run iff their labels
+        match, so **every** output-shaping axis must appear in ``_identity_parts``. For
+        example::
+
+            exp[model=gpt-6-luna,rounds=2,reasoning=direct,prompts=(rel1=v3,rel2=v4,schema=v2,parse=v4,direct=v5,coding=v4,claims=v3,linking=v1)]
+        """
+        return f"{self.name}[" + ",".join(self._identity_parts()) + "]"
+
+
+def config_search_path() -> list[Path]:
+    """Where run configs are looked up, in order: a user overlay first, then the copy
+    that ships inside the package.
+
+    The overlay is ``R3TRACE_CONFIGS_DIR`` if set, else ``./configs`` under the current
+    working directory — so you can add your own run config without forking the package."""
+    overlay = os.environ.get("R3TRACE_CONFIGS_DIR")
+    return [Path(overlay) if overlay else Path.cwd() / "configs", settings.CONFIGS_DIR]
+
+
+def available_configs() -> list[str]:
+    """Run-config names available to :func:`load_config`, from every root on the search
+    path (an overlay config shadows a packaged one of the same name)."""
+    return sorted(
+        {
+            p.stem
+            for root in config_search_path()
+            if root.is_dir()
+            for p in root.glob("*.yaml")
+        }
+    )
+
+
+def resolve_config_path(name: str) -> Path | None:
+    """The file a config name actually resolves to, or ``None``. See
+    :func:`r3trace.prompts.resolve_prompt_path` for why the winning root is recorded."""
+    return _find(f"{name}.yaml")
+
+
+def _refused(error: Mapping[str, Any], name: str, overridden: Collection[str]) -> str:
+    """One setting pydantic refused: whether it was an override or set in config
+    ``name``, its path, a short repr of the value given (a refused key is already in
+    the path), or for ``params``, which may hold a credential not yet registered for
+    masking, the value's type alone, and why."""
+    where = "override" if error["loc"][0] in overridden else f"config {name!r}"
+    setting = ".".join(str(part) for part in error["loc"] if part != "[key]")
+    if error["type"] == "missing":
+        return f"{where}: `{setting}` is empty or missing"
+    if error["loc"][-1] == "[key]":
+        return f"{where}: `{setting}`: {error['msg']}"
+    if error["loc"][0] == "params":
+        kind = type(error["input"]).__name__
+        return f"{where}: `{setting}` is a {kind}: {error['msg']}"
+    return f"{where}: `{setting}={reprlib.repr(error['input'])}`: {error['msg']}"
+
+
+def _find(relative: str) -> Path | None:
+    """First existing ``relative`` path across the config search path, else ``None``."""
+    for root in config_search_path():
+        candidate = root / relative
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def load_config(
+    name: str = DEFAULT_CONFIG,
+    *,
+    model: str | None = None,
+    summary_rounds: int | None = None,
+    reasoning: ReasoningPath | None = None,
+    evidence_level: EvidenceLevel | None = None,
+    claims: bool | None = None,
+    params: Mapping[str, Any] | None = None,
+) -> RunConfig:
+    """Load ``configs/<name>.yaml`` into a :class:`RunConfig`, each override that is not
+    ``None`` taking the place of the file's value. Every override is recorded on the
+    config and shows up in its label, because each of them shapes the output.
+
+    Raises ``KeyError`` for an unknown config name, ``ValueError`` for any invalid
+    setting, in the file or an override, in one line naming each, and
+    ``FileNotFoundError`` if a pinned prompt version has no file
+    (:func:`check_prompts`).
+    """
+    path = _find(f"{name}.yaml")
+    if path is None:
+        raise KeyError(f"Unknown config {name!r}. Known: {available_configs()}")
+    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    unknown = sorted(set(raw) - _CONFIG_FIELDS)
+    if unknown:
+        message = (
+            f"config {name!r} has field(s) r3trace does not read: {unknown}. "
+            f"A config sets {sorted(_CONFIG_FIELDS)}."
+        )
+        if "seed" in unknown:
+            message += (
+                " `seed` was removed in r3context 0.2.0; to send one, put it in `params` "
+                f"(params: {{seed: {raw['seed']}}})."
+            )
+        raise ValueError(message)
+    # A setting left empty in the file takes its default, as an override of None does.
+    fields = {key: value for key, value in raw.items() if value is not None}
+    cfg = configure(
+        fields,
+        name,
+        model=model,
+        summary_rounds=summary_rounds,
+        reasoning=reasoning,
+        evidence_level=evidence_level,
+        claims=claims,
+        params=params,
+    )
+    check_prompts(cfg)
+    return cfg
+
+
+def configure(
+    fields: Mapping[str, Any],
+    name: str,
+    *,
+    model: str | None = None,
+    summary_rounds: int | None = None,
+    reasoning: ReasoningPath | None = None,
+    evidence_level: EvidenceLevel | None = None,
+    claims: bool | None = None,
+    params: Mapping[str, Any] | None = None,
+) -> RunConfig:
+    """The :class:`RunConfig` named ``name`` with the settings in ``fields``, each
+    override that is not ``None`` taking the place of its value, validated in one pass
+    and recorded on the config.
+
+    Raises:
+        ValueError: for any invalid setting, in ``fields`` or an override, in one line
+            naming each.
+    """
+    overrides = {
+        "model": model,
+        "summary_rounds": summary_rounds,
+        "reasoning": reasoning,
+        "evidence_level": evidence_level,
+        "claims": claims,
+        "params": params,
+    }
+    applied = {k: v for k, v in overrides.items() if v is not None}
+    try:
+        cfg = RunConfig.model_validate({**fields, **applied, "name": name})
+    except ValidationError as invalid:
+        problems = "; ".join(
+            _refused(error, name, applied) for error in invalid.errors()
+        )
+        raise ValueError(f"{problems}.") from None
+    # Resolved values, so the manifest shows what each override became.
+    cfg.overrides = {key: getattr(cfg, key) for key in applied}
+    return cfg
+
+
+def check_prompts(config: RunConfig) -> None:
+    """Refuse a config that cannot render every stage's prompt, before any request.
+
+    Raises:
+        ValueError: if a stage the config reads (:attr:`RunConfig.prompt_stages`) has
+            no version pinned, or the config is document-level and a relevance or
+            claims prompt it reads has no document-level form (its template does not
+            read ``evidence_level``).
+        FileNotFoundError: if a pinned version has no file on the prompt search path.
+    """
+    missing = [s for s in config.prompt_stages if s not in config.prompts]
+    if missing:
+        raise ValueError(
+            f"config {config.name!r} is missing prompt versions for stage(s): {missing}"
+        )
+    for stage in config.prompt_stages:
+        require_prompt_path(stage, config.prompts[stage])
+    if config.evidence_level == "sentence":
+        return
+    levelled: list[PromptStage] = [
+        s for s in config.prompt_stages if s in _LEVELLED_STAGES
+    ]
+    for stage in levelled:
+        version = config.prompts[stage]
+        if "evidence_level" not in prompt_variables(stage, version):
+            raise ValueError(
+                f"this run is document-level, but config {config.name!r} pins {stage} "
+                f"{version}, which has no document-level form: pin a version that "
+                "has one, or run at the sentence level."
+            )

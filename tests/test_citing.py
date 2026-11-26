@@ -1,7 +1,7 @@
 import logging
 
-from r3con.runtime.llm import schema_as_sent
-from r3con.stages.citing import CitingRequest, citing_schema, read_citing
+from r3trace.runtime.llm import schema_as_sent
+from r3trace.stages.citing import CitingRequest, citing_schema, read_citing
 
 MODEL = "openai/gpt-6-luna"
 SHOWN = ["a1", "b2", "c3"]
@@ -31,7 +31,7 @@ def test_unshown_and_repeated_ids_are_dropped_and_the_rest_kept_in_order(llm, ca
         "Prompt.", citing_schema("Reply", SHOWN, note=(str, ...)), SHOWN
     )
     reply = {"note": "A note.", "provenance_ids": ["c3", "zz", "a1", "c3", "zz"]}
-    with caplog.at_level(logging.WARNING, logger="r3con.citing"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.citing"):
         read_reply, provenance = read(request, llm.replies(reply))
     assert (read_reply.note, provenance) == ("A note.", ["c3", "a1"])
     assert caplog.messages == [

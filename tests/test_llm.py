@@ -31,10 +31,10 @@ from pydantic import (
 )
 from pydantic_core import Url
 
-from r3con import settings
-from r3con.masking import masked
-from r3con.runs import StageRun, TaskLogger
-from r3con.runtime.llm import (
+from r3trace import settings
+from r3trace.masking import masked
+from r3trace.runs import StageRun, TaskLogger
+from r3trace.runtime.llm import (
     _RETRY_AFTER_JITTER_SECONDS,
     _SECONDS_DIGITS,
     CUT_OFF,
@@ -79,13 +79,13 @@ UNKNOWN_PARAMETER = {
 # A new process's documents make its first model calls at once, as relevance does,
 # and every line of pydantic's model rebuild hands the GIL to another thread: before
 # pydantic 2.14, two threads building one of litellm's deferred models raced there.
-# completion=litellm.completion has r3con send each call once: its own resend of a
+# completion=litellm.completion has r3trace send each call once: its own resend of a
 # failed call would hide the race behind one retry.
 FIRST_CALLS_AT_ONCE = """
 import threading, time
 import litellm, pydantic
-from r3con.parallel import parallel_map
-from r3con.runtime.llm import litellm_chat_completion_full
+from r3trace.parallel import parallel_map
+from r3trace.runtime.llm import litellm_chat_completion_full
 
 REBUILD = pydantic.BaseModel.model_rebuild.__func__.__code__
 DOCUMENTS = 5
@@ -142,7 +142,7 @@ CALLER_RETRY_SETTINGS = {"num_retries", "max_retries", "retry_policy"}
 LONGEST_FIRST_BACKOFF = 1
 NOW = "Tue, 27 Oct 2026 12:00:00 GMT"
 KEY = "sk-not-a-real-key-0123456789"
-# No shape litellm's own redactor knows: only r3con's masking can hide it.
+# No shape litellm's own redactor knows: only r3trace's masking can hide it.
 PLAIN_KEY = "not-a-real-key-q7RkT2mXv9LpA4sW"
 SERVER = "https://llm.example.com/v1"
 PRIVATE_KEY = f"-----BEGIN PRIVATE KEY-----\n{PLAIN_KEY}\n-----END PRIVATE KEY-----\n"
@@ -533,13 +533,13 @@ def test_a_routers_credential_tag_stays_out_of_the_callers_tags(
 ):
     monkeypatch.setattr(litellm, "completion", llm.replies("ok", "ok"))
     routing = router({"model": MODEL, "litellm_credential_name": CREDENTIAL_NAME})
-    metadata = {"trace": own_trace, "tags": ["r3con"]}
+    metadata = {"trace": own_trace, "tags": ["r3trace"]}
     for _ in range(2):
         ask(routing.completion, metadata=metadata)
         assert logged.acquire(timeout=THREAD_TIMEOUT_SECONDS)
-    assert metadata == {"trace": own_trace, "tags": ["r3con"]}
+    assert metadata == {"trace": own_trace, "tags": ["r3trace"]}
     sent = [request["metadata"]["tags"] for request in llm.requests]
-    assert sent == [["r3con", f"Credential: {CREDENTIAL_NAME}"]] * 2
+    assert sent == [["r3trace", f"Credential: {CREDENTIAL_NAME}"]] * 2
 
 
 @pytest.mark.allow_hosts(["127.0.0.1"])
@@ -722,10 +722,10 @@ def test_no_resend_starts_after_the_total_time_cap(
 def test_each_resend_is_logged_as_a_warning_naming_the_error_and_the_wait(
     httpserver, caplog
 ):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     answers_in_turn(httpserver, RATE_LIMITED, RATE_LIMITED, OK)
     ask_server(httpserver)
-    resends = [record for record in caplog.records if record.name == "r3con.llm"]
+    resends = [record for record in caplog.records if record.name == "r3trace.llm"]
     assert [record.levelno for record in resends] == [logging.WARNING] * 2
     resend = re.compile(r"in \S+ seconds as it raised RateLimitError")
     assert all(resend.search(record.getMessage()) for record in resends)
@@ -734,7 +734,7 @@ def test_each_resend_is_logged_as_a_warning_naming_the_error_and_the_wait(
 @pytest.mark.allow_hosts(["127.0.0.1"])
 @BOTH_PATHS
 def test_a_resend_warning_masks_the_key_the_error_echoes(httpserver, caplog, model):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     echoed = {"error": {"message": f"slow down, {PLAIN_KEY}", "type": "server_error"}}
     answers_in_turn(httpserver, (429, echoed), OK)
     litellm_chat_completion(
@@ -760,7 +760,7 @@ def test_a_resend_warning_masks_the_key_the_error_echoes(httpserver, caplog, mod
     ],
     ids=["num_retries", "max_retries", "retry_policy"],
 )
-def test_a_callers_own_retry_setting_replaces_r3cons_resends(
+def test_a_callers_own_retry_setting_replaces_r3traces_resends(
     httpserver, own_setting, requests
 ):
     answers_in_turn(httpserver, RATE_LIMITED)
@@ -817,7 +817,7 @@ def test_a_recorded_call_says_how_often_it_was_sent_and_how_long_it_waited(
     assert len(llm.requests) == sends
 
 
-def test_a_call_r3con_did_not_resend_itself_records_no_sends_or_wait(llm, run):
+def test_a_call_r3trace_did_not_resend_itself_records_no_sends_or_wait(llm, run):
     ask(llm.replies("ok"), run=run)
 
     [step] = run.steps
@@ -1016,7 +1016,7 @@ def test_a_callers_own_logger_fn_is_still_called_and_the_body_still_recorded(
     assert run.steps[0].usage == COUNTS
 
 
-def test_a_call_r3con_does_not_record_goes_out_without_the_hook(llm):
+def test_a_call_r3trace_does_not_record_goes_out_without_the_hook(llm):
     ask(llm.replies("ok"))
 
     assert "logger_fn" not in llm.requests[0]
@@ -1067,8 +1067,8 @@ def test_a_supplied_completion_that_hands_over_no_body_records_no_usage_model_or
 def test_a_recorded_call_says_how_long_it_took_resends_and_waits_included(
     llm, monkeypatch, run, rate_limits
 ):
-    # r3con's own wait, which the autouse `waits` fixture replaces with a record.
-    monkeypatch.setattr("r3con.runtime.llm._sleep", _sleep)
+    # r3trace's own wait, which the autouse `waits` fixture replaces with a record.
+    monkeypatch.setattr("r3trace.runtime.llm._sleep", _sleep)
     monkeypatch.setattr(random, "uniform", lambda low, high: low)
     error = slowed_down(retry_after=str(RETRY_AFTER_SECONDS))
     errors = [slowly(error) for _ in range(rate_limits)]
@@ -1132,8 +1132,8 @@ def test_a_wait_to_resend_is_the_one_sleep_whether_or_not_cancel_is_given(
 def test_a_wait_to_resend_ends_at_once_when_cancel_is_set_and_nothing_is_resent(
     llm, monkeypatch, run
 ):
-    # r3con's own wait, which the autouse `waits` fixture replaces with a record.
-    monkeypatch.setattr("r3con.runtime.llm._sleep", _sleep)
+    # r3trace's own wait, which the autouse `waits` fixture replaces with a record.
+    monkeypatch.setattr("r3trace.runtime.llm._sleep", _sleep)
     cancel = threading.Event()
 
     def slowed_down_and_cancelled(request: dict) -> str:

@@ -1,13 +1,13 @@
 import pytest
 
-from r3con.provenance import (
+from r3trace.provenance import (
     DEFAULT_RULE,
     build_graph,
     build_provenance,
     evidence_trail,
     with_claims,
 )
-from r3con.stages.relevance import RelevantContext, SnippetRecord
+from r3trace.stages.relevance import RelevantContext, SnippetRecord
 from tests.fakes import quote
 
 NAMES = {"a": "a.txt", "b": "b.txt", "c": "c.txt"}
