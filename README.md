@@ -1,5 +1,10 @@
 
-# R3Trace
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/michaeltheologitis/r3trace/main/docs/wordmark-dark.svg">
+    <img src="https://raw.githubusercontent.com/michaeltheologitis/r3trace/main/docs/wordmark-light.svg" alt="R3Trace" height="48">
+  </picture>
+</h1>
 
 [![arXiv](https://img.shields.io/badge/arXiv-2609.27173-b31b1b.svg)](https://arxiv.org/abs/2609.27173)
 ![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue)
