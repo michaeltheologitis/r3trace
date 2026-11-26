@@ -20,7 +20,7 @@ import jinja2
 from pydantic import BaseModel
 
 from evals import CACHE_DIR, ask_judge, download, rows_by_id
-from r3con.runs import StageRun
+from r3trace.runs import StageRun
 
 DATA_URL = (
     "https://huggingface.co/datasets/Tongyi-Zhiwen/CorpusQA/resolve/"
@@ -63,7 +63,7 @@ def rows() -> dict[str, dict[str, Any]]:
 
 
 def inputs(row: dict[str, Any]) -> tuple[str, list[str]]:
-    """The question r3con is asked, the question then the instruction, and the task's
+    """The question r3trace is asked, the question then the instruction, and the task's
     documents."""
     instruction, documents = _split_prompt(row)
     task = "\n\n".join(part for part in (row["question"], instruction) if part)

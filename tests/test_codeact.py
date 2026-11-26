@@ -1,8 +1,8 @@
 import litellm
 import pytest
 
-from r3con import settings
-from r3con.runtime.codeact import (
+from r3trace import settings
+from r3trace.runtime.codeact import (
     CodeExecutionError,
     _clip_assistant_response,
     _extract_code_from_response,

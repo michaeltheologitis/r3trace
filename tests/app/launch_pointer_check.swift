@@ -1,4 +1,4 @@
-// Opens R3Con again and again with the pointer already resting on its window's top row, for
+// Opens R3Trace again and again with the pointer already resting on its window's top row, for
 // .github/workflows/mac-app.yml: swift tests/app/launch_pointer_check.swift APP LOG_DIR
 // As after Sparkle's Install and Relaunch, the pointer is where the window opens, so AppKit hit-tests
 // the band over the top row as soon as it joins the window, before the page has said where its
@@ -16,7 +16,7 @@ import Foundation
 
 let app = URL(fileURLWithPath: CommandLine.arguments[1])
 let logs = URL(fileURLWithPath: CommandLine.arguments[2], isDirectory: true)
-let executable = app.appendingPathComponent("Contents/MacOS/R3Con")
+let executable = app.appendingPathComponent("Contents/MacOS/R3Trace")
 // After the one that finds where the window opens.
 let launches = 5
 // In the top row, past the traffic lights and the brand, on the status: as in window_drag_check.swift.
@@ -112,7 +112,7 @@ func launch(_ number: Int) -> (Process, URL) {
     process.executableURL = executable
     // As mac-app.yml's first launch: INFO, and each line the app logs also on its stderr.
     var environment = ProcessInfo.processInfo.environment
-    environment["R3CON_LOG_LEVEL"] = "INFO"
+    environment["R3TRACE_LOG_LEVEL"] = "INFO"
     environment["OS_ACTIVITY_DT_MODE"] = "YES"
     process.environment = environment
     do {
@@ -123,7 +123,7 @@ func launch(_ number: Int) -> (Process, URL) {
         process.standardError = output
         try process.run()
     } catch {
-        finish("error", "R3Con didn't start from \(executable.path): \(error)", failing: true)
+        finish("error", "R3Trace didn't start from \(executable.path): \(error)", failing: true)
     }
     return (process, log)
 }
@@ -153,7 +153,7 @@ for number in 0...launches {
         let elapsed = Date().timeIntervalSince(started)
         if !process.isRunning {
             let pointed = (spot ?? target).map { " with the pointer at \($0)" } ?? ""
-            fail("R3Con died \(Int(elapsed)) s into launch \(number)\(pointed), by \(ending(of: process)).", process, log)
+            fail("R3Trace died \(Int(elapsed)) s into launch \(number)\(pointed), by \(ending(of: process)).", process, log)
         }
         if frame == nil, let opened = windowFrame(of: pid) {
             frame = opened
@@ -206,7 +206,7 @@ for number in 0...launches {
         fail("Launch \(number) didn't end within \(Int(quitSeconds)) s of a quit.", process, log)
     }
     if process.terminationReason == .uncaughtSignal {
-        fail("R3Con died on a quit, by \(ending(of: process)).", process, log)
+        fail("R3Trace died on a quit, by \(ending(of: process)).", process, log)
     }
     let raised = text(of: log).split(separator: "\n").filter { $0.contains(raisedIntoAppKit) }
     if !raised.isEmpty {
@@ -218,4 +218,4 @@ for number in 0...launches {
 if rested < launches {
     finish("warning", "Only \(rested) of \(launches) launches opened under the pointer: the rest are untested.")
 }
-print("R3Con opened \(launches) times with the pointer resting on its top row, active as its page loaded, and lived until each quit.")
+print("R3Trace opened \(launches) times with the pointer resting on its top row, active as its page loaded, and lived until each quit.")

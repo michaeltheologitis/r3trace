@@ -9,10 +9,10 @@ from dataclasses import asdict
 import litellm
 import pytest
 
-from r3con import settings
-from r3con.runs import StageRun, TaskLogger
-from r3con.runtime.llm import Cancelled
-from r3con.stages.relevance import (
+from r3trace import settings
+from r3trace.runs import StageRun, TaskLogger
+from r3trace.runtime.llm import Cancelled
+from r3trace.stages.relevance import (
     RelevantContext,
     SnippetRecord,
     draw_document_ids,
@@ -467,7 +467,7 @@ def test_a_cited_id_the_call_did_not_show_is_dropped_with_a_warning(llm, caplog)
             "provenance_ids": ["1b1b1b", "0a0a0a", "1b1b1b"],
         }
 
-    with caplog.at_level(logging.WARNING, logger="r3con.citing"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.citing"):
         result = surface(llm, ["DOC0", "DOC1"], rounds=2, reply=reply)
     assert result.provenance == [["1b1b1b"], ["0a0a0a"]]
     assert (
@@ -587,7 +587,7 @@ THREE = ["DOC0", "DOC1", "DOC2"]
 def test_a_last_round_note_whose_reply_stays_unusable_gives_way_to_its_earlier_one(
     llm, caplog, unusable, reason, error, sends
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.relevance")
+    caplog.set_level(logging.WARNING, logger="r3trace.relevance")
     result = surface(llm, THREE, rounds=2, reply=unusable_in(2, unusable))
     assert by_round(result, "skipped") == [[[None]] * 3, [[reason], [None], [None]]]
     assert by_round(result, "summary")[1] == [[""], ["N(DOC1,r2)"], ["N(DOC2,r2)"]]
@@ -605,7 +605,7 @@ def test_a_last_round_note_whose_reply_stays_unusable_gives_way_to_its_earlier_o
 def test_a_skipped_part_is_logged_once_though_a_refusal_discards_it_and_reads_again(
     llm, caplog, window
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.relevance")
+    caplog.set_level(logging.WARNING, logger="r3trace.relevance")
     second_half = LONG[LONG.index("P10. ") :]
 
     def reply(request):

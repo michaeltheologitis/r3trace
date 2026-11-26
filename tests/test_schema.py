@@ -1,7 +1,7 @@
 import pytest
 
-from r3con.stages.structuring.parsing import SchemaError
-from r3con.stages.structuring.schema import propose_schema
+from r3trace.stages.structuring.parsing import SchemaError
+from r3trace.stages.structuring.schema import propose_schema
 
 MODEL = "openai/gpt-6-luna"
 SCHEMA = """from pydantic import BaseModel, Field

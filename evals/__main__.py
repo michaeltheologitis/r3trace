@@ -1,4 +1,4 @@
-"""Run r3con on the pinned tasks, judge each answer, and track the scores over time.
+"""Run r3trace on the pinned tasks, judge each answer, and track the scores over time.
 
     uv run python -m evals                      # a full run: writes its line to results.jsonl
     uv run python -m evals --limit 1            # one task per benchmark, writes nothing
@@ -32,14 +32,14 @@ from typing import Any
 import litellm
 from litellm import exceptions
 
-import r3con
+import r3trace
 from evals import JUDGE_MODEL, corpusqa, log, loong
-from r3con.config import EVIDENCE_LEVELS, EvidenceLevel, RunConfig, load_config
-from r3con.logging_setup import configure_logging
-from r3con.masking import masked
-from r3con.pipeline import ASKS_FOLDER
-from r3con.runs import StageRun, TaskLogger, new_run_folder
-from r3con.runtime.llm import is_temporary
+from r3trace.config import EVIDENCE_LEVELS, EvidenceLevel, RunConfig, load_config
+from r3trace.logging_setup import configure_logging
+from r3trace.masking import masked
+from r3trace.pipeline import ASKS_FOLDER
+from r3trace.runs import StageRun, TaskLogger, new_run_folder
+from r3trace.runtime.llm import is_temporary
 
 EVALS_DIR = Path(__file__).resolve().parent
 REPO_DIR = EVALS_DIR.parent
@@ -62,7 +62,7 @@ SEED = 20261028
 DEFAULT_WORKERS = 32
 USD_DIGITS = 4
 # A refused key, access or quota, or a model the provider does not know: the setup's
-# problem, not r3con's.
+# problem, not r3trace's.
 SETUP_ERRORS = (
     exceptions.AuthenticationError,
     exceptions.PermissionDeniedError,
@@ -128,8 +128,8 @@ def compare(
     workers: int = DEFAULT_WORKERS,
 ) -> dict[str, Any] | None:
     """Answer each pinned task of the finished run in ``run``, or the first ``limit``
-    of each benchmark, again with ``model``: through :func:`r3con.ask` over the task's
-    r3con run folder, with its question. The answers are judged and recorded as a
+    of each benchmark, again with ``model``: through :func:`r3trace.ask` over the task's
+    r3trace run folder, with its question. The answers are judged and recorded as a
     run's, in ``run``'s ``asks/<model>/``, laid out as a run folder, where a task with
     a record is skipped; the results line is returned and written as :func:`evaluate`
     does."""
@@ -255,14 +255,16 @@ def run_task(
 def _answer(
     name: str, row: dict[str, Any], task_dir: Path, *, root: Path, config: RunConfig
 ) -> dict[str, Any]:
-    """r3con's answer to one task, from a fresh folder, kept as :func:`_answered`
-    says, with ``run_dir``, its r3con run folder, relative to the run folder
+    """r3trace's answer to one task, from a fresh folder, kept as :func:`_answered`
+    says, with ``run_dir``, its r3trace run folder, relative to the run folder
     ``root``."""
     question, documents = BENCHMARKS[name].inputs(row)
     shutil.rmtree(task_dir, ignore_errors=True)
     answered = _answered(
         row["id"],
-        lambda: r3con.run(question, documents, config=config, logs_dir=task_dir).answer,
+        lambda: (
+            r3trace.run(question, documents, config=config, logs_dir=task_dir).answer
+        ),
     )
     return {**answered, "run_dir": _relative(_run_folder(task_dir), root)}
 
@@ -271,8 +273,8 @@ def _ask(
     name: str, row: dict[str, Any], _task_dir: Path, *, run: Path, model: str
 ) -> dict[str, Any]:
     """``model``'s answer to one task, kept as :func:`_answered` says: by
-    :func:`r3con.ask` over the task's r3con run folder in the run folder ``run``, with
-    its question. ``run_dir`` is that r3con run folder and ``ask_dir`` the one r3con
+    :func:`r3trace.ask` over the task's r3trace run folder in the run folder ``run``, with
+    its question. ``run_dir`` is that r3trace run folder and ``ask_dir`` the one r3trace
     wrote the ask to, in its ``asks/``, both relative to ``run``."""
     run_dir = _run_folder(run / name / row["id"])
     asked: list[Path] = []
@@ -283,9 +285,9 @@ def _ask(
 
     def ask() -> str:
         if run_dir is None:
-            raise FileNotFoundError(f"{run / name / row['id']} holds no r3con run")
+            raise FileNotFoundError(f"{run / name / row['id']} holds no r3trace run")
         manifest = json.loads((run_dir / MANIFEST).read_text(encoding="utf-8"))
-        return r3con.ask(run_dir, manifest["task"], model=model, on_event=note).answer
+        return r3trace.ask(run_dir, manifest["task"], model=model, on_event=note).answer
 
     answered = _answered(row["id"], ask)
     return {
@@ -317,7 +319,7 @@ def _answered(task_id: str, answer: Callable[[], str]) -> dict[str, Any]:
 
 
 def _run_folder(task_dir: Path) -> Path | None:
-    """The r3con run folder in ``task_dir``, if r3con made one."""
+    """The r3trace run folder in ``task_dir``, if r3trace made one."""
     return next((path.parent for path in task_dir.glob(f"*/{MANIFEST}")), None)
 
 
@@ -328,7 +330,7 @@ def _relative(path: Path | None, root: Path) -> str | None:
 
 
 def spend(*folders: Path) -> dict[str, Any]:
-    """The tokens and cost of every call recorded under ``folders``, r3con's and the
+    """The tokens and cost of every call recorded under ``folders``, r3trace's and the
     judge's, but not under an ``asks/`` in them: asks made over a run are not its cost.
     ``usd`` is ``None`` when litellm could not price one of the calls."""
     calls = [
@@ -353,14 +355,14 @@ def _start(
     """What the run is, with ``value`` as ``key`` (a run's ``label``, or the
     ``answer_model`` of a comparison): written into ``folder`` when it starts, and
     checked against this checkout when it resumes, so one run never mixes two versions
-    of r3con. ``anew`` says how to start over instead."""
+    of r3trace. ``anew`` says how to start over instead."""
     current = {
         "date": datetime.datetime.now(datetime.UTC).date().isoformat(),
         "commit": _git("rev-parse", "HEAD"),
         "dirty": bool(
             _git("status", "--porcelain", "--untracked-files=no", "--", *DIRTY_PATHS)
         ),
-        "r3con_version": r3con.__version__,
+        "r3trace_version": r3trace.__version__,
         key: value,
         "judge_model": JUDGE_MODEL,
     }
@@ -497,7 +499,7 @@ def positive(text: str) -> int:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m evals",
-        description="Run r3con on the pinned Loong and CorpusQA tasks, judge each "
+        description="Run r3trace on the pinned Loong and CorpusQA tasks, judge each "
         "answer, and write the scores to evals/results.jsonl.",
     )
     parser.add_argument(
@@ -527,7 +529,7 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         metavar="FOLDER",
         help="Answer the tasks of the finished run in FOLDER again with --model, by "
-        "r3con.ask over each task's r3con run, and judge the answers, in "
+        "r3trace.ask over each task's r3trace run, and judge the answers, in "
         "FOLDER/asks/<model>/. Running it again finishes it.",
     )
     parser.add_argument(

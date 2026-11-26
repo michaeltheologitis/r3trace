@@ -26,7 +26,7 @@ import jinja2
 from pydantic import BaseModel, Field
 
 from evals import CACHE_DIR, ask_judge, download, rows_by_id
-from r3con.runs import StageRun
+from r3trace.runs import StageRun
 
 TASKS_URL = (
     "https://raw.githubusercontent.com/michaeltheologitis/r3con-evaluation/"
@@ -91,7 +91,7 @@ def rows() -> dict[str, dict[str, Any]]:
 
 
 def inputs(row: dict[str, Any]) -> tuple[str, list[str]]:
-    """The question r3con is asked, the instruction then the question, and the task's
+    """The question r3trace is asked, the instruction then the question, and the task's
     documents, in the order its gold answer refers to them."""
     doc_dir, legal = _pool()
     task = "\n\n".join(part for part in (row["instruction"], row["question"]) if part)

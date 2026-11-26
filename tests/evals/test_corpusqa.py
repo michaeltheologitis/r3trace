@@ -3,7 +3,7 @@ import pytest
 from evals import JUDGE_MODEL, corpusqa
 
 
-def test_r3con_is_asked_the_question_then_the_instruction_over_each_document(
+def test_r3trace_is_asked_the_question_then_the_instruction_over_each_document(
     corpusqa_cache, corpusqa_instruction
 ):
     task, documents = corpusqa.inputs(corpusqa.rows()["sales_en_1"])

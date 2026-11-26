@@ -5,10 +5,10 @@ import re
 import litellm
 import pytest
 
-from r3con import settings
-from r3con.config import REASONING_PATHS
-from r3con.runs import StageRun, TaskLogger
-from r3con.stages.reasoning import _sample_record_per_field, reason
+from r3trace import settings
+from r3trace.config import REASONING_PATHS
+from r3trace.runs import StageRun, TaskLogger
+from r3trace.stages.reasoning import _sample_record_per_field, reason
 from tests.fakes import Raw, citable_lists
 
 MODEL = "openai/gpt-6-luna"
@@ -169,7 +169,7 @@ def test_the_direct_reply_cites_from_an_enum_of_summaries_and_one_of_parses_show
 
 @PATHS
 def test_an_empty_summary_cannot_be_cited(llm, caplog, path):
-    caplog.set_level(logging.WARNING, logger="r3con.citing")
+    caplog.set_level(logging.WARNING, logger="r3trace.citing")
     cited = [IDS[1], f"{IDS[2]}.2"]
     result = cite(llm, path, citing(path, summary_ids=cited), documents=THREE_DOCUMENTS)
     assert result.citations == {**NO_IDS, "summary_ids": [f"{IDS[2]}.2"]}
@@ -186,7 +186,7 @@ def test_an_empty_summary_cannot_be_cited(llm, caplog, path):
 
 @PATHS
 def test_a_document_with_no_records_cannot_be_cited_for_the_parse(llm, caplog, path):
-    caplog.set_level(logging.WARNING, logger="r3con.citing")
+    caplog.set_level(logging.WARNING, logger="r3trace.citing")
     cited = [IDS[2], IDS[1]]
     result = cite(llm, path, citing(path, parse_ids=cited), documents=THREE_DOCUMENTS)
     assert result.citations == {**NO_IDS, "parse_ids": [IDS[1]]}
@@ -204,7 +204,7 @@ def test_a_document_with_no_records_cannot_be_cited_for_the_parse(llm, caplog, p
 def test_with_nothing_to_cite_each_list_is_any_strings_and_all_it_holds_is_dropped(
     llm, caplog, path
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.citing")
+    caplog.set_level(logging.WARNING, logger="r3trace.citing")
     unstamped = {"parsed": {"rows": [{"who": "Halloran"}]}, "document_ids": IDS[:1]}
     reply = citing(path, summary_ids=[IDS[0]], parse_ids=[IDS[0]])
     result = cite(llm, path, reply, documents=unstamped)
@@ -241,7 +241,7 @@ def test_a_direct_reply_without_provenance_ids_cites_nothing(llm, reply):
 
 
 def test_a_commit_without_provenance_ids_cites_nothing(llm, caplog):
-    caplog.set_level(logging.WARNING, logger="r3con")
+    caplog.set_level(logging.WARNING, logger="r3trace")
     result = cite(llm, "coding", committing(""))
     assert (result.answer, result.citations) == ("ok", NO_IDS)
     assert caplog.messages == []
@@ -260,14 +260,14 @@ def test_a_commit_without_provenance_ids_cites_nothing(llm, caplog):
 def test_provenance_ids_that_are_not_lists_of_ids_by_view_cite_nothing_with_a_warning(
     llm, caplog, given
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.reasoning")
+    caplog.set_level(logging.WARNING, logger="r3trace.reasoning")
     result = cite(llm, "coding", committing(f", provenance_ids={given!r}"))
     assert (result.answer, result.citations) == ("ok", NO_IDS)
     assert caplog.messages == [KEYS_WARNING.format(given)]
 
 
 def test_a_missing_list_cites_nothing_and_an_unknown_key_is_ignored(llm, caplog):
-    caplog.set_level(logging.WARNING, logger="r3con.reasoning")
+    caplog.set_level(logging.WARNING, logger="r3trace.reasoning")
     given = {"summary_ids": [IDS[0]], "documents": [IDS[1]]}
     result = cite(llm, "coding", committing(f", provenance_ids={given!r}"))
     assert result.citations == {**NO_IDS, "summary_ids": [IDS[0]]}
@@ -283,7 +283,7 @@ def test_a_commit_may_pass_its_provenance_ids_second_by_position(llm):
 def test_a_coding_v2_commit_still_answers_and_its_provenance_list_cites_nothing(
     llm, caplog
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.reasoning")
+    caplog.set_level(logging.WARNING, logger="r3trace.reasoning")
     prompts = {**PROMPTS, "reasoning/coding": "v2"}
     v2_style = committing(f", provenance=[{IDS[0]!r}]")
     result = cite(llm, "coding", v2_style, prompts=prompts)
@@ -359,7 +359,7 @@ def test_direct_replies_that_never_fit_go_to_the_coding_path_with_the_view_it_pi
     llm, monkeypatch, caplog, flood_guard, whole
 ):
     monkeypatch.setattr(settings, "REASONING_PARSE_MAX_TOKS", flood_guard)
-    caplog.set_level(logging.WARNING, logger="r3con.reasoning")
+    caplog.set_level(logging.WARNING, logger="r3trace.reasoning")
     bad = [{"provenance_ids": NO_IDS}, "not JSON", EMPTY_ANSWER]
     result = ask(llm, *bad, citing("coding"))
     assert (result.answer, result.path) == ("ok", "coding")
@@ -435,7 +435,7 @@ def test_fewer_than_one_attempt_is_refused_before_any_request(llm):
 def test_only_the_shown_ids_are_kept_in_order_once_each(
     llm, caplog, path, summary_ids, parse_ids, kept, dropped
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.citing")
+    caplog.set_level(logging.WARNING, logger="r3trace.citing")
     result = cite(llm, path, citing(path, summary_ids, parse_ids))
     assert result.citations == {**NO_IDS, "summary_ids": kept[0], "parse_ids": kept[1]}
     assert caplog.messages == [
@@ -678,7 +678,7 @@ def test_the_prompt_says_documents_were_read_in_parts_only_when_a_summary_is_a_p
 def test_the_whole_parse_is_shown_only_when_the_first_turn_fits_the_line(
     llm, window, caplog, reasoning_sections, parse_shown, tokens, whole
 ):
-    caplog.set_level(logging.INFO, logger="r3con.reasoning")
+    caplog.set_level(logging.INFO, logger="r3trace.reasoning")
     prompt = reasoning_prompt(llm, parsed=ROWS, model=window(tokens))
     assert (LAST_ROW in prompt) is whole
     assert (SAMPLE in prompt) is not whole
@@ -699,7 +699,7 @@ def test_the_whole_parse_is_shown_only_when_the_first_turn_fits_the_line(
 def test_a_first_turn_refused_with_the_whole_parse_is_sent_once_more_with_samples(
     llm, caplog, refusal
 ):
-    caplog.set_level(logging.WARNING, logger="r3con.reasoning")
+    caplog.set_level(logging.WARNING, logger="r3trace.reasoning")
     result = ask(llm, refusal(), PRINTS, citing("coding"), path="coding")
     assert result.answer == "ok"
     whole, samples = first_turn_prompts(llm)
@@ -748,7 +748,7 @@ def test_a_direct_prompt_that_fits_without_the_enum_it_drops_is_sent(llm, window
 def test_a_direct_prompt_over_the_line_is_not_sent_and_the_coding_path_answers(
     llm, window, caplog
 ):
-    caplog.set_level(logging.INFO, logger="r3con.reasoning")
+    caplog.set_level(logging.INFO, logger="r3trace.reasoning")
     result = ask(llm, citing("coding"), model=window(4_000))
     assert (result.answer, result.path) == ("ok", "coding")
     assert result.fallback == {"cause": "estimate", "estimate": 4_120, "line": 3_400}
@@ -766,7 +766,7 @@ def test_a_direct_prompt_refused_as_too_long_goes_to_the_coding_path_with_sample
     llm, caplog
 ):
     # The direct request takes about 4,120 tokens, the coding one with samples 2,880.
-    caplog.set_level(logging.WARNING, logger="r3con.reasoning")
+    caplog.set_level(logging.WARNING, logger="r3trace.reasoning")
     result = ask(llm.refuses_over(tokens=3_500), citing("coding"))
     assert (result.answer, result.path) == ("ok", "coding")
     assert result.fallback is not None and result.fallback["cause"] == "refusal"

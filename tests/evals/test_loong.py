@@ -52,7 +52,7 @@ def test_legal_verdicts_are_withheld_only_when_the_question_asks_to_match_them(
         ("loong-paper", "List the citations."),
     ],
 )
-def test_r3con_is_asked_the_instruction_then_the_question(
+def test_r3trace_is_asked_the_instruction_then_the_question(
     loong_cache, task_id, question
 ):
     assert loong.inputs(loong.rows()[task_id])[0] == question

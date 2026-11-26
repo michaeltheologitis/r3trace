@@ -9,11 +9,11 @@ import litellm
 import pytest
 from litellm import exceptions
 
-import r3con
+import r3trace
 from evals import JUDGE_MODEL, download
 from evals.__main__ import SEED, compare, evaluate, main, sample, spend
-from r3con.config import load_config
-from r3con.stages.structuring.parsing import SchemaError
+from r3trace.config import load_config
+from r3trace.stages.structuring.parsing import SchemaError
 from tests.fakes import ANSWERING_SCHEMA
 
 PINNED = {
@@ -61,7 +61,7 @@ TASK_FAILURES = [
 def repo(tmp_path, monkeypatch):
     """The git checkout a run reads its commit and dirtiness from: a clean one."""
     root = tmp_path / "repo"
-    for name in ("src/r3con.py", "evals/results.jsonl"):
+    for name in ("src/r3trace.py", "evals/results.jsonl"):
         (root / name).parent.mkdir(parents=True)
         (root / name).write_text("")
     git(root, "init")
@@ -133,7 +133,7 @@ def test_a_full_run_scores_every_task_and_writes_its_line(
     assert list((tmp_path / "run").rglob("reasoning"))
     assert not list((tmp_path / "run").rglob("claims"))
     assert line["judge_model"] == JUDGE_MODEL
-    assert line["r3con_version"] == r3con.__version__
+    assert line["r3trace_version"] == r3trace.__version__
     assert len(line["commit"]) == 40
     assert [json.loads(text) for text in results.read_text().splitlines()] == [line]
     task = tmp_path / "run" / "loong" / "loong-paper"
@@ -197,7 +197,7 @@ def test_a_task_the_judge_fails_has_no_record_and_is_only_rejudged_on_resume(
 
 
 @pytest.mark.parametrize("failure", TASK_FAILURES, ids=lambda e: type(e).__name__)
-def test_a_task_whose_r3con_run_raises_is_recorded_with_its_error_and_scored_worst(
+def test_a_task_whose_r3trace_run_raises_is_recorded_with_its_error_and_scored_worst(
     loong_cache, corpusqa_cache, judging_llm, tmp_path, failure
 ):
     judging_llm.answers(schema=failure)
@@ -259,7 +259,7 @@ def test_a_run_started_from_a_dirty_tree_never_resumes(
     loong_cache, corpusqa_cache, judging_llm, tmp_path, repo
 ):
     folder, results = tmp_path / "run", tmp_path / "results.jsonl"
-    (repo / "src" / "r3con.py").write_text("changed")
+    (repo / "src" / "r3trace.py").write_text("changed")
     assert evaluate(PINNED, folder, results, limit=1)["dirty"] is True
     git(repo, "checkout", "--", "src")
 
@@ -580,7 +580,7 @@ def test_a_runs_cost_leaves_out_the_asks_over_its_tasks(
     run, results = tmp_path / "run", tmp_path / "results.jsonl"
     line = evaluate(PINNED, run, results)
     for manifest in run.glob("*/*/*/manifest.json"):
-        r3con.ask(manifest.parent, "Asked again?")
+        r3trace.ask(manifest.parent, "Asked again?")
     for record in run.glob("*/*/record.json"):
         record.unlink()
 
@@ -676,7 +676,7 @@ def test_a_moved_run_still_prices_its_asks_when_judged_again(
     assert compare(PINNED, moved, ANSWER_MODEL, results)["usd"] == line["usd"]
 
 
-def test_a_task_whose_r3con_run_is_gone_is_recorded_as_an_error_when_asked(
+def test_a_task_whose_r3trace_run_is_gone_is_recorded_as_an_error_when_asked(
     loong_cache, corpusqa_cache, judging_llm, tmp_path
 ):
     run, results = tmp_path / "run", tmp_path / "results.jsonl"
@@ -689,7 +689,7 @@ def test_a_task_whose_r3con_run_is_gone_is_recorded_as_an_error_when_asked(
     assert line["benchmarks"]["loong"]["errors"] == 1
     record = read_json(run / ASKED / "loong" / "loong-paper" / "record.json")
     assert record["error"].startswith("FileNotFoundError: ")
-    assert record["error"].endswith("loong-paper holds no r3con run")
+    assert record["error"].endswith("loong-paper holds no r3trace run")
 
 
 @pytest.mark.parametrize(

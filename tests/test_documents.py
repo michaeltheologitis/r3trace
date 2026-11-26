@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from r3con.documents import read_documents, unique_names
+from r3trace.documents import read_documents, unique_names
 from tests.app.bundle_check import encrypted_pdf
 from tests.documents import (
     CORRUPT_DOCX,
@@ -57,7 +57,7 @@ CHART_DESCRIPTION = "A chart of incidents by site"
 Q3_ADDRESS = "https://example.com/q3"
 # Deeper than markdownify can recurse: each level takes it at least one call.
 NESTED_DEEPER_THAN_RECURSION = sys.getrecursionlimit()
-# Deeper than Python's JSON decoder goes, on every version r3con runs on.
+# Deeper than Python's JSON decoder goes, on every version r3trace runs on.
 JSON_DEPTH = 100_000
 JSON_LD_NESTED_TOO_DEEP = (
     f'<script type="application/ld+json">{"[" * JSON_DEPTH}{"]" * JSON_DEPTH}</script>'
@@ -110,7 +110,7 @@ def test_pdfs_are_extracted_and_one_that_cannot_be_read_is_dropped_saying_why(
     (tmp_path / "c_corrupt.pdf").write_bytes(b"%PDF-1.4 truncated garbage")
     write_pdf(tmp_path / "c_locked.pdf", "A locked memo.", password="secret")
     (tmp_path / "d_plain.txt").write_text("a plain memo", encoding="utf-8")
-    with caplog.at_level(logging.WARNING, logger="r3con.documents"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.documents"):
         documents = read_documents(tmp_path)
     assert list(documents) == ["a_memo.pdf", "d_plain.txt"]
     assert "Incidents this quarter: 7." in documents["a_memo.pdf"]
@@ -120,16 +120,16 @@ def test_pdfs_are_extracted_and_one_that_cannot_be_read_is_dropped_saying_why(
         "c_corrupt.pdf": "not readable as a PDF (PdfStreamError)",
         "c_locked.pdf": "password-protected (FileNotDecryptedError)",
     }
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        f"{tmp_path / name}: {why}; skipping it" for name, why in said.items()
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [f"{tmp_path / name}: {why}; skipping it" for name, why in said.items()]
 
 
 # pypdf picks its AES library on import: cryptography if it imports, else pycryptodome.
 READ_DOCUMENTS_WITHOUT = """
 import json, sys
 sys.modules.update(dict.fromkeys(sys.argv[2:]))
-from r3con import read_documents
+from r3trace import read_documents
 print(json.dumps(read_documents(sys.argv[1])))
 """
 
@@ -299,12 +299,12 @@ def test_a_file_that_cannot_be_read_or_has_no_text_is_logged_and_dropped(
     unreadable = tmp_path / name
     unreadable.write_bytes(content)
     (tmp_path / "b_plain.txt").write_text("a plain memo", encoding="utf-8")
-    with caplog.at_level(logging.WARNING, logger="r3con.documents"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.documents"):
         documents = read_documents(tmp_path)
     assert documents == {"b_plain.txt": "a plain memo"}
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        f"{unreadable}: {logged}; skipping it"
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [f"{unreadable}: {logged}; skipping it"]
 
 
 @pytest.mark.parametrize(
@@ -705,11 +705,11 @@ def test_a_page_nested_too_deep_for_markdown_is_read_as_its_text_with_a_warning(
 ):
     page = tmp_path / "page.html"
     page.write_text("<div>" * NESTED_DEEPER_THAN_RECURSION + "<p>Incidents: 7.</p>")
-    with caplog.at_level(logging.WARNING, logger="r3con.documents"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.documents"):
         assert read_documents(page) == {"page.html": "Incidents: 7."}
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        f"{page}: nested too deep for Markdown; reading its text alone"
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [f"{page}: nested too deep for Markdown; reading its text alone"]
 
 
 def test_reading_an_xhtml_page_or_one_that_reads_like_a_url_prints_no_warning(
@@ -742,12 +742,12 @@ def test_a_file_that_cannot_be_opened_is_logged_and_skipped(tmp_path, caplog):
         path.chmod(0)
     if os.access(locked[0], os.R_OK):
         pytest.skip("this user, root say, reads a file whatever its mode")
-    with caplog.at_level(logging.WARNING, logger="r3con.documents"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.documents"):
         documents = read_documents(tmp_path)
     assert documents == {"d_plain.txt": "a plain memo"}
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        f"{path}: not readable (PermissionError); skipping it" for path in locked
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [f"{path}: not readable (PermissionError); skipping it" for path in locked]
 
 
 @pytest.mark.parametrize(
@@ -761,12 +761,12 @@ def test_a_walk_or_a_glob_skips_office_lock_files_and_logs_a_file_with_no_text(
     write_docx(tmp_path / "a_report.docx", ["Incidents this quarter: 7."])
     write_docx(tmp_path / "b_empty.docx")
     (tmp_path / "~$a_report.docx").write_bytes(WORD_OWNER_FILE)
-    with caplog.at_level(logging.WARNING, logger="r3con.documents"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.documents"):
         documents = read_documents(source(tmp_path))
     assert documents == {"a_report.docx": "Incidents this quarter: 7."}
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        f"{tmp_path / 'b_empty.docx'}: no extractable text; skipping it"
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [f"{tmp_path / 'b_empty.docx'}: no extractable text; skipping it"]
 
 
 def test_a_walk_skips_what_is_hidden_or_under_macosx_below_its_folder(tmp_path):
@@ -900,12 +900,12 @@ def test_a_walk_or_a_glob_reads_every_file_inside_the_folder_and_none_outside(
 
 def test_a_walk_logs_each_file_that_resolves_outside_the_folder(tmp_path, caplog):
     write_folder_with_links(tmp_path)
-    with caplog.at_level(logging.WARNING, logger="r3con.documents"):
+    with caplog.at_level(logging.WARNING, logger="r3trace.documents"):
         documents = read_documents("folder")
     assert list(documents.values()) == FOLDER_DOCUMENTS
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        f"folder/link.txt: resolves outside {tmp_path / 'folder'}; skipping it"
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [f"folder/link.txt: resolves outside {tmp_path / 'folder'}; skipping it"]
 
 
 @pytest.mark.parametrize(
@@ -921,13 +921,13 @@ def test_a_glob_that_leaves_its_folder_finds_nothing_and_logs_why(
 ):
     write_folder_with_links(tmp_path)
     with (
-        caplog.at_level(logging.WARNING, logger="r3con.documents"),
+        caplog.at_level(logging.WARNING, logger="r3trace.documents"),
         pytest.raises(FileNotFoundError, match="No documents found at"),
     ):
         read_documents(pattern)
-    assert [r.getMessage() for r in caplog.records if r.name == "r3con.documents"] == [
-        f"{skipped}: resolves outside {tmp_path / 'folder'}; skipping it"
-    ]
+    assert [
+        r.getMessage() for r in caplog.records if r.name == "r3trace.documents"
+    ] == [f"{skipped}: resolves outside {tmp_path / 'folder'}; skipping it"]
 
 
 def test_a_file_named_directly_is_read_even_through_a_link(tmp_path):

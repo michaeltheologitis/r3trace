@@ -5,7 +5,7 @@ from datetime import UTC, date, datetime, time
 import pytest
 from pydantic import BaseModel, ValidationError
 
-from r3con.masking import (
+from r3trace.masking import (
     _ERROR_CHARS,
     is_credential_name,
     masked,

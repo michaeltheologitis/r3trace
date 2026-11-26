@@ -1,4 +1,4 @@
-// Checks the run panel in src/r3con/app/ (index.html, app.css, app.js) in headless Chromium: node tests/app/check.mjs
+// Checks the run panel in src/r3trace/app/ (index.html, app.css, app.js) in headless Chromium: node tests/app/check.mjs
 // The live area serves it with tests/app/fake_server.py, through uv.
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -13,7 +13,7 @@ import { gunzipSync, gzipSync } from 'node:zlib';
 // An ESM import ignores NODE_PATH, where a global Playwright is found; require honours it.
 const require = createRequire(import.meta.url);
 
-const APP_DIR = new URL('../../src/r3con/app/', import.meta.url);
+const APP_DIR = new URL('../../src/r3trace/app/', import.meta.url);
 const PAGE_URL = new URL('index.html', APP_DIR).href;
 const SCRIPT_FILE = fileURLToPath(new URL('app.js', APP_DIR));
 const PAGE_FILES = { '/': 'index.html', '/app.css': 'app.css', '/app.js': 'app.js' };
@@ -94,12 +94,12 @@ const OWN_PROVIDER = 'its provider';
 // Enough Tab presses to reach a settings select from the server's key field, past the saved models.
 const MAX_TABS = 5;
 const RETIRED_SETTINGS_KEY = 'r3con-proto-settings';
-// Where a live tab keeps what r3con app opened it with, for a reload: in its sessionStorage.
-const LAUNCH_KEY = 'r3con-launch';
+// Where a live tab keeps what r3trace app opened it with, for a reload: in its sessionStorage.
+const LAUNCH_KEY = 'r3trace-launch';
 const TEST_KEY = 'sk-check-not-a-real-key-7f3a';
-// The page's MASK before TEST_KEY's last four, the only part of it r3con app answers.
+// The page's MASK before TEST_KEY's last four, the only part of it r3trace app answers.
 const TEST_HINT = '••••7f3a';
-// A key the page saved, as its row shows it: r3con app's, which fake_server.py's store remembers, and the prototype's.
+// A key the page saved, as its row shows it: r3trace app's, which fake_server.py's store remembers, and the prototype's.
 const REMEMBERED_HINT = `${TEST_HINT} · remembered`;
 const UNTIL_CLOSED_HINT = `${TEST_HINT} · until the app closes`;
 const ENVIRONMENT_KEY = 'env-check-not-a-real-key-9c1d';
@@ -108,7 +108,7 @@ const SECOND_ENDPOINT = 'http://localhost:11434';
 const OTHER_PATH_ENDPOINT = 'http://10.0.0.7:8000/v2';
 const OTHER_SCHEME_ENDPOINT = 'https://10.0.0.7:8000/v1';
 const CREDENTIALS_ENDPOINT = 'http://user:hunter2@10.0.0.9:8000/v1';
-// What r3con app answers for a server URL it refuses, as the settings show it.
+// What r3trace app answers for a server URL it refuses, as the settings show it.
 const CREDENTIALS_REFUSED = 'Server · other.endpoint: must not hold a user or password: put the key in its key field';
 const NO_HOST_REFUSED = 'Server · other.endpoint: must name a host';
 // What the settings say when a server's URL is left without http(s).
@@ -135,7 +135,7 @@ const LARGE_RUN_DOCS = 40;
 const LARGE_RUN_COUNTS = { nodes: 162, edges: 3440 };
 // The page's GRID.rowGap: answer nodes stack this far apart.
 const ROW_GAP = 112;
-const SIMULATED_LABEL = 'simulated — not connected to R3Con yet';
+const SIMULATED_LABEL = 'simulated — not connected to R3Trace yet';
 // A simulated run's note, from the page's SUMMARY_CHARS.
 const SIMULATED_NOTE = "simulated · each relevance summary is the file's first 140 characters, and the citations are made up";
 // A relevance round's line for a document with a summary.
@@ -158,7 +158,7 @@ const RUN_STEPS = [
 ];
 // A replay first reads its documents, its read line nested under that.
 const REPLAY_STEPS = [[`reading ${SAMPLE_DOCS} documents`, 1, ''], ...RUN_STEPS];
-// What the chat no longer says: lines that only describe how r3con works, and the citations and source under an answer.
+// What the chat no longer says: lines that only describe how r3trace works, and the citations and source under an answer.
 const COMMENTARY = ['one summary per document', 'beside the other summaries', 'cite another document', 'drew on', 'follow-up over this run'];
 const PROTOTYPE_NOTE = 'prototype · replays one recorded run';
 // The chat's line height: 13.5px at 1.55.
@@ -227,9 +227,9 @@ const OFF_SCHEMA = '(the model answers off schema)';
 const RELEASE_FILE = 'release';
 const QUIET = '(nothing relevant here)';
 const SPLIT_MEMO = '06_split_memo';
-// The summary rounds r3con's default config runs: the recorded sample's, and the setting's until another is chosen.
+// The summary rounds r3trace's default config runs: the recorded sample's, and the setting's until another is chosen.
 const ROUNDS = 2;
-// r3con app's MAX_SUMMARY_ROUNDS: the setting offers 1 to this many.
+// r3trace app's MAX_SUMMARY_ROUNDS: the setting offers 1 to this many.
 const MAX_ROUNDS = 4;
 // Other counts of rounds, which a live run of each, chosen in the settings, is checked to send and draw in full; the
 // most is where a dotted line's lanes are tightest.
@@ -247,7 +247,7 @@ const EVIDENCE_LABEL = 'evidence level';
 const EVIDENCE_LEVELS = ['sentence', 'document'];
 // What storage may hold for the evidence level, as the checkbox before the select stored it or not, and what each shows.
 const STORED_EVIDENCE = { sentence: 'sentence', document: 'document', paragraph: 'sentence' };
-// What storage may hold that r3con app would refuse as a count of rounds.
+// What storage may hold that r3trace app would refuse as a count of rounds.
 const REFUSED_ROUNDS = ['7', '0', '2.5', 'three'];
 const TOKEN_CAP_KEY = 'r3con-proto-token-cap';
 const TOKEN_CAP_LABEL = 'token cap';
@@ -258,7 +258,7 @@ const CAP_NOTE = [
 ];
 const CAP = 8192;
 const OTHER_CAP = 4096;
-// None is a whole number from 1 to r3con app's MAX_TOKEN_CAP.
+// None is a whole number from 1 to r3trace app's MAX_TOKEN_CAP.
 const REFUSED_CAPS = ['0', '-1', '2.5', '8.192', '1e4', 'abc', '1000001', '1,000,001'];
 const CAP_REFUSED = 'Token cap · needs a whole number from 1 to 1,000,000';
 const STORED_REFUSED_CAPS = ['0', 'abc', '2.5', '1000001'];
@@ -270,7 +270,7 @@ const LOOSE_CAPS = [
   ['32_768', '32768'],
   ['1,000,000', '1000000'],
 ];
-// Frames drawn while a run's request is held, before r3con app has said anything of the run.
+// Frames drawn while a run's request is held, before r3trace app has said anything of the run.
 const HELD_FRAMES = 3;
 const SIMULATED_DONE = /^● done · simulated run · .+ · nothing was sent$/;
 // fake_server.py's answer: of its claims, its first sentence rests on the first two pieces of evidence the claims call is
@@ -284,8 +284,8 @@ const LIVE_DONE = /^● done · openai\/gpt-6-luna · [\d,]+ tokens · \$[\d.]+$
 const LIVE_READY = /^ready · openai\/gpt-6-luna · \$[\d.]+$/;
 const LIVE_ERROR = "RuntimeError: the check's model is down";
 const LIVE_FAILED = `● failed in relevance · ${LIVE_ERROR}`;
-const STALE_TOKEN = "this page's launch token is missing or stale; reopen it from the r3con app terminal";
-const LOST_CONNECTION = '● lost the connection to r3con app';
+const STALE_TOKEN = "this page's launch token is missing or stale; reopen it from the r3trace app terminal";
+const LOST_CONNECTION = '● lost the connection to r3trace app';
 const UNAUTHORIZED_LOG = 'Failed to load resource: the server responded with a status of 401';
 const CUT_STREAM_LOG = 'Failed to load resource: net::ERR_INCOMPLETE_CHUNKED_ENCODING';
 const REFUSED_LOG = 'Failed to load resource: the server responded with a status of 422';
@@ -334,7 +334,7 @@ const CUT_LINE = 'open in full';
 const JSON_INDENT = 2;
 // A stream this long, which no page uses, makes a PDF far bigger than its text.
 const PDF_PADDING = 25000;
-// The Markdown r3con makes of report.docx below.
+// The Markdown r3trace makes of report.docx below.
 const WORD_TEXT = 'Incidents by site:\n\n| Site | Incidents |\n| --- | --- |\n| Halloran | 7 |\n| Merrow | 3 |';
 const ZIPPED_TEXT = 'A memo that came in a zip.\n';
 // A file named as a PDF that pypdf can't read.
@@ -378,20 +378,20 @@ const WRITE_DOCUMENTS =
   'for name, spec in json.loads(sys.argv[2]).items(): WRITERS[Path(name).suffix](Path(sys.argv[1], name), **spec)';
 // An old Office file is an OLE2 compound file, whose header holds NUL bytes.
 const OLE2_START = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1, 0x00, 0x00];
-const NOT_TEXT = 'R3Con reads text, PDF, Word (.docx) and HTML files: save as one of those, then add again.';
-const OLD_WORD = "R3Con reads Word's .docx, not the older .doc: save as .docx, PDF or text, then add again.";
-const NEEDS_APP = 'PDF, Word, HTML and zip files need r3con app; this prototype reads only text files.';
+const NOT_TEXT = 'R3Trace reads text, PDF, Word (.docx) and HTML files: save as one of those, then add again.';
+const OLD_WORD = "R3Trace reads Word's .docx, not the older .doc: save as .docx, PDF or text, then add again.";
+const NEEDS_APP = 'PDF, Word, HTML and zip files need r3trace app; this prototype reads only text files.';
 const UNREADABLE_ZIP = "Couldn't unzip it: it's corrupt, or not a zip.";
 const NO_DOCUMENTS = 'No text, PDF, Word (.docx) or HTML files in it';
 const BROWSER_COULD_NOT_READ = "The browser couldn't read it.";
 // The page's NAMED_AT_MOST: a refusal names this many files, then counts the rest.
 const NAMED_AT_MOST = 5;
-// The page's EXTRACTIONS_AT_ONCE: how many files' text it asks r3con app for at once.
+// The page's EXTRACTIONS_AT_ONCE: how many files' text it asks r3trace app for at once.
 const EXTRACTIONS_AT_ONCE = 4;
 // Long enough for every request the page sends at once to reach a route that holds them.
 const ROUTED_MS = 300;
-const NO_TEXT = "No text: it's empty or only images, or R3Con can't read it.";
-// The page's PDF_NO_TEXT: why a PDF has no text, by the reason r3con app gives.
+const NO_TEXT = "No text: it's empty or only images, or R3Trace can't read it.";
+// The page's PDF_NO_TEXT: why a PDF has no text, by the reason r3trace app gives.
 const SCANNED = "No text: it's likely a scan, which needs OCR first.";
 const PASSWORD_PROTECTED = 'Password-protected: save a copy without the password.';
 const NOT_A_PDF = 'Not a readable PDF: it may be damaged.';
@@ -674,7 +674,7 @@ function recordedSample() {
   return match ? JSON.parse(match[1]) : null;
 }
 
-// The index of the sample's document that r3con's summary or document id `id` names.
+// The index of the sample's document that r3trace's summary or document id `id` names.
 const docIndexIn = (sample, id) => sample.ids.indexOf(id.split('.')[0]);
 
 // Each sample memo's name without its suffix, as the page labels it.
@@ -739,8 +739,8 @@ function sourcesOf(sample, docIds, id) {
   return own;
 }
 
-// r3con's trail of answer `answerId` with its nodes and edges named as the page names its nodes and lines, by `ids`,
-// r3con's document ids, and `docIds`, the page's document nodes, both in document order. A node the page doesn't draw,
+// r3trace's trail of answer `answerId` with its nodes and edges named as the page names its nodes and lines, by `ids`,
+// r3trace's document ids, and `docIds`, the page's document nodes, both in document order. A node the page doesn't draw,
 // of a document it doesn't hold or a round past the run's `rounds`, is left out, with its edges.
 function trailOnPage(trail, ids, docIds, answerId = 'answer-0', rounds = ROUNDS) {
   const named = (node) => {
@@ -1414,7 +1414,7 @@ async function load() {
 async function beforeRun() {
   await withPage('before a run', { sample: false }, async (page) => {
     const names = { title: await page.title(), brand: await page.textContent('.brand') };
-    check('before a run', 'the browser tab is titled ❀ R3Con and the header brand is r3con', isDeepStrictEqual(names, { title: '❀ R3Con', brand: 'r3con' }), JSON.stringify(names));
+    check('before a run', 'the browser tab is titled ❀ R3Trace and the header brand is r3trace', isDeepStrictEqual(names, { title: '❀ R3Trace', brand: 'r3trace' }), JSON.stringify(names));
     const docs = await count(page, '.node.doc');
     const onlyDocs = docs === SAMPLE_DOCS && (await count(page, '.node')) === docs;
     check('before a run', `the ${SAMPLE_DOCS} sample documents are the only nodes`, onlyDocs);
@@ -1792,7 +1792,7 @@ async function folders() {
     check('folders', toggleName, toggled && isDeepStrictEqual(spaced, ['reports · 5 docs', 'memo']), `${shut.rows.join(' | ')}; ${JSON.stringify(shut.look)}; ${shut.focused}; then ${spaced.join(' | ')}`);
   });
 
-  const dir = mkdtempSync(join(tmpdir(), 'r3con-folders-'));
+  const dir = mkdtempSync(join(tmpdir(), 'r3trace-folders-'));
   try {
     for (const [path, text] of [['picked/01_memo.txt', 'A picked memo.\n'], ['picked/sub/02_memo.md', 'A memo in a subfolder.\n']]) {
       mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -2148,7 +2148,7 @@ async function sampleReplay() {
     const lit = Object.keys(edges).filter((k) => edges[k].includes('lit')).sort();
     const onPath = await litNodes(page);
     const expected = sample && trailOnPage(sample.answer.provenance.relevant_trail, sample.ids, docIds);
-    const litName = "the lit nodes and lines are exactly the recorded answer's trail, as r3con walked it, named as the page names them";
+    const litName = "the lit nodes and lines are exactly the recorded answer's trail, as r3trace walked it, named as the page names them";
     const litDetail = `${onPath.length} nodes and ${lit.length} lines lit; the trail has ${expected?.nodes.length} and ${expected?.edges.length}`;
     check('sample replay', litName, Boolean(sample) && isDeepStrictEqual({ nodes: onPath, edges: lit }, expected), litDetail);
     const parses = (sample?.answer.provenance.relevant_trail.cited.parse_ids ?? []).map((id) => docIndexIn(sample, id));
@@ -2421,7 +2421,7 @@ async function runView() {
 
 // Writes every document in `specs` with one uv run, and returns each by name, as setInputFiles takes it.
 function writeDocuments(specs) {
-  const dir = mkdtempSync(join(tmpdir(), 'r3con-documents-'));
+  const dir = mkdtempSync(join(tmpdir(), 'r3trace-documents-'));
   try {
     execFileSync('uv', ['run', 'python', '-c', WRITE_DOCUMENTS, dir, JSON.stringify(specs)], { cwd: REPO_DIR });
     const written = (name) => ({ name, mimeType: MIME_TYPES[extname(name)], buffer: readFileSync(join(dir, name)) });
@@ -2436,7 +2436,7 @@ const brokenPdf = () => ({ name: '05_broken.pdf', mimeType: 'application/pdf', b
 const oldPowerPoint = () => ({ name: 'old.ppt', mimeType: 'application/vnd.ms-powerpoint', buffer: Buffer.from(OLE2_START) });
 const filesError = (page) => page.$eval('#files-error', (el) => (el.hidden ? null : el.textContent));
 
-// The prototype has no r3con app to extract a PDF's, a Word file's or a web page's text.
+// The prototype has no r3trace app to extract a PDF's, a Word file's or a web page's text.
 async function filesNotText() {
   await withPage('files', { sample: false }, async (page) => {
     await page.click('#tab-files');
@@ -2446,7 +2446,7 @@ async function filesNotText() {
     const listed = await removeNames(page);
     const error = await filesError(page);
     const expected = `Not added: 01_memo.pdf, memos.zip, page.html, report.docx. ${NEEDS_APP} Not added: old.doc. ${OLD_WORD}`;
-    const name = 'the prototype refuses a PDF, a .docx, an .html and a zip, saying they need r3con app, and an old .doc, saying to save it as .docx, PDF or text, and adds a .log';
+    const name = 'the prototype refuses a PDF, a .docx, an .html and a zip, saying they need r3trace app, and an old .doc, saying to save it as .docx, PDF or text, and adds a .log';
     const added = isDeepStrictEqual(listed, ['remove notes.log']);
     check('files', name, added && error === expected, `${listed.join(', ')}; ${error}`);
   });
@@ -3050,7 +3050,7 @@ async function serverMenu(page, checkAt) {
   await page.fill('#endpoint-other', '');
   const kept = await page.evaluate(placesHolding, 'hunter2');
   const refused = isDeepStrictEqual(refusals, [CREDENTIALS_REFUSED, NO_HOST_REFUSED]) && isDeepStrictEqual(await servers(), listed) && kept.length === 0;
-  checkAt('a server URL with a user or password, or with no host, is refused as r3con app refuses it, and kept nowhere', refused, `${refusals.join(' | ')}; ${kept.join(', ')}`);
+  checkAt('a server URL with a user or password, or with no host, is refused as r3trace app refuses it, and kept nowhere', refused, `${refusals.join(' | ')}; ${kept.join(', ')}`);
 
   for (const [i, endpoint] of three.entries()) {
     await page.getByRole('button', { name: `remove server ${endpoint}`, exact: true }).click();
@@ -3549,7 +3549,7 @@ async function capSetting(page, checkAt) {
     refusals.push({ cap, marked: !marked.valid && marked.stored === String(OTHER_CAP), left: await control(), said: await said() });
   }
   const refusedOnLeaving = refusals.every(({ marked, left, said: line }) => marked && held(left, String(OTHER_CAP)) && line === CAP_REFUSED);
-  checkAt(`a cap r3con app would refuse (${REFUSED_CAPS.join(' ')}) is marked invalid as typed and never stored; leaving the field says why and puts back the cap that holds`, refusedOnLeaving, JSON.stringify(refusals.filter(({ marked, left, said: line }) => !marked || !held(left, String(OTHER_CAP)) || line !== CAP_REFUSED)));
+  checkAt(`a cap r3trace app would refuse (${REFUSED_CAPS.join(' ')}) is marked invalid as typed and never stored; leaving the field says why and puts back the cap that holds`, refusedOnLeaving, JSON.stringify(refusals.filter(({ marked, left, said: line }) => !marked || !held(left, String(OTHER_CAP)) || line !== CAP_REFUSED)));
 
   await page.fill('#token-cap', REFUSED_CAPS[0]);
   await page.click('#cap-note-btn');
@@ -3579,7 +3579,7 @@ async function capSetting(page, checkAt) {
   }
   await page.evaluate((key) => localStorage.removeItem(key), TOKEN_CAP_KEY);
   await page.keyboard.press('Escape');
-  checkAt(`storage holding a cap r3con app would refuse (${STORED_REFUSED_CAPS.join(', ')}) reads as none`, stored.every((value) => value === ''), JSON.stringify(stored));
+  checkAt(`storage holding a cap r3trace app would refuse (${STORED_REFUSED_CAPS.join(', ')}) reads as none`, stored.every((value) => value === ''), JSON.stringify(stored));
 }
 
 // In-page, before the page's own script: storage throws on any use, as when the browser blocks it.
@@ -3625,7 +3625,7 @@ async function roundsSetting(page, checkAt) {
   await page.reload();
   const blocked = await control();
   const fallsBack = refused.every((value) => value === String(ROUNDS)) && blocked.value === String(ROUNDS) && blocked.stored === 'blocked';
-  checkAt(`storage that throws, or holds a count r3con app would refuse, reads as ${ROUNDS}`, fallsBack, `${REFUSED_ROUNDS.map((held, i) => `${held} → ${refused[i]}`).join(', ')}; blocked → ${blocked.value}`);
+  checkAt(`storage that throws, or holds a count r3trace app would refuse, reads as ${ROUNDS}`, fallsBack, `${REFUSED_ROUNDS.map((held, i) => `${held} → ${refused[i]}`).join(', ')}; blocked → ${blocked.value}`);
   await pickRounds(page, MORE_ROUNDS);
   await page.fill('#question', NEW_QUESTION);
   await page.click('#run-btn');
@@ -3959,7 +3959,7 @@ function quotesShown(sample, docIds, { marks, pills }) {
   };
 }
 
-// The chat's list of the sentences r3con's `quotes` give, over documents `docs` whose ids are `ids`: each document's name,
+// The chat's list of the sentences r3trace's `quotes` give, over documents `docs` whose ids are `ids`: each document's name,
 // then the text at each place it quotes there, in order. None of these quotes overlap, which the list would join.
 function quotesListed(docs, ids, quotes) {
   return docs.flatMap((doc, d) => {
@@ -3975,7 +3975,7 @@ function quotesNoted(listed, line) {
   return { line, groups: listed.map((group) => [head(group), ...group.slice(1)]) };
 }
 
-// The sample with `prefix` before its first memo, its quotes moved by the prefix's code points, as r3con would place them.
+// The sample with `prefix` before its first memo, its quotes moved by the prefix's code points, as r3trace would place them.
 const prefixed = (prefix) => (sample) => {
   const shift = prefix.length - (prefix.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g)?.length ?? 0);
   const moved = (q) => ({ ...q, start: q.start + shift, end: q.end + shift });
@@ -3989,7 +3989,7 @@ const EMOJI_PREFIX = `🚧🚧 Roadworks notice.\n${Array.from({ length: 60 }, (
 // Seven words a line, lines enough that all of the memo's quotes fall past where its popup stops short.
 const PAST_CUT = 'A filler line, ahead of the memo.\n'.repeat(Math.ceil(WORDS_SHOWN / 7));
 
-// The sample with nothing located in its first memo: round 1 quotes nothing, and round 2 one sentence r3con didn't find.
+// The sample with nothing located in its first memo: round 1 quotes nothing, and round 2 one sentence r3trace didn't find.
 function unlocatedFirstMemo(sample) {
   sample.rounds[0][0].quotes = [];
   sample.rounds[1][0].quotes = [{ ...sample.rounds[1][0].quotes[0], start: null, end: null }];
@@ -4219,7 +4219,7 @@ async function quotesArea() {
     const listName = "under the answer the chat lists its trail's quotes, ▸ folded: N quotes from M documents; a click opens it to each document's name and its quotes, marked";
     check('quotes', listName, listed, JSON.stringify([lists, openedList].map((l) => l[0] && [l[0].open, l[0].shown, l[0].marker])));
     const fromQuotes = quotesListed(sample.docs, sample.ids, sample.answer.provenance.relevant_trail.quotes);
-    check('quotes', "the sentences highlighted for the answer are exactly the quotes r3con recorded on its trail", isDeepStrictEqual(openedList[0]?.docs, fromQuotes), JSON.stringify(fromQuotes.map((doc) => doc.length - 1)));
+    check('quotes', "the sentences highlighted for the answer are exactly the quotes r3trace recorded on its trail", isDeepStrictEqual(openedList[0]?.docs, fromQuotes), JSON.stringify(fromQuotes.map((doc) => doc.length - 1)));
     await page.click('.sentences .sentence >> nth=0');
     const fromChat = { title: (await popup(page))?.title, flash: (await page.evaluate(flashed))?.text };
     const chatName = "a sentence in the chat's list opens its document's popup at it, flashed";
@@ -4247,7 +4247,7 @@ async function quotesArea() {
     const own = isDeepStrictEqual(askPills, ask.pills) && isDeepStrictEqual(askFiles, ask.counts) && isDeepStrictEqual(askList, { line: ASK_QUOTED.line, open: false, shown: false, marker: '"▸ "', docs: ask.docs });
     check('quotes', ownName, own, JSON.stringify({ askPills, askList: askList?.line }));
     const askQuoted = isDeepStrictEqual(askList?.docs, quotesListed(sample.docs, sample.ids, asks[0].provenance.relevant_trail.quotes));
-    check('quotes', "the sentences highlighted for a recorded follow-up are exactly the quotes r3con recorded on its trail", askQuoted, JSON.stringify(askList?.docs.map((doc) => doc.length - 1)));
+    check('quotes', "the sentences highlighted for a recorded follow-up are exactly the quotes r3trace recorded on its trail", askQuoted, JSON.stringify(askList?.docs.map((doc) => doc.length - 1)));
     await inspect(page, docIds[ASK_QUOTED.title[0]]);
     const askMarks = (await page.evaluate(marksIn, '#inspector')).marks;
     const askMarksName = `a follow-up lit marks its own trail in a document's text: ${sample.docs[ASK_QUOTED.title[0]].name}, quoted by both rounds for the answer, by round 1 alone for the follow-up`;
@@ -4346,7 +4346,7 @@ async function quotesArea() {
     await quotesOf(page, 'r2-0');
     await page.click('#inspector .quote >> nth=0');
     const flash = await page.evaluate(flashed);
-    const unitsName = 'a memo with an emoji before its quotes, one code point to r3con and two UTF-16 units here, marks its sentences where they are, and a quote clicked scrolls its long popup to the flashed sentence';
+    const unitsName = 'a memo with an emoji before its quotes, one code point to r3trace and two UTF-16 units here, marks its sentences where they are, and a quote clicked scrolls its long popup to the flashed sentence';
     const unitsOk = isDeepStrictEqual(marks, quotesShown(sample, [], SAMPLE_QUOTED).marks[0]) && flash?.text === sample.rounds[1][0].quotes[0].text && flash.inView;
     check('quotes', unitsName, unitsOk, `${JSON.stringify(marks)}; flashed ${JSON.stringify(flash?.text)} in view ${flash?.inView}`);
   });
@@ -4405,7 +4405,7 @@ async function quotesArea() {
     await page.click('#tab-files');
     const count = (await page.evaluate(fileCounts))[0].count;
     const plain = isDeepStrictEqual(quotes, [[sample.rounds[1][0].quotes[0].text, false, false]]);
-    const usedName = "a document on the trail with no sentence located says used, with no pill and no count, and a quote r3con didn't find is listed plain, with no null anywhere";
+    const usedName = "a document on the trail with no sentence located says used, with no pill and no count, and a quote r3trace didn't find is listed plain, with no null anywhere";
     check('quotes', usedName, doc.meta.endsWith(' · used') && doc.marks.length === 0 && pill === null && count === null && plain && nothingNull, `${doc.meta}; ${JSON.stringify(quotes)}`);
   });
 }
@@ -4421,9 +4421,9 @@ const SAMPLE_ANSWER_TITLE = '● Which maintenance… · gpt-6-luna';
 // What a linked sentence's evidence is, as its name and its popup's line say: its quotes, or at the document level its
 // documents.
 const evidenceOf = ({ quotes, documents }) => (quotes.length ? `${counted(quotes.length, 'quote')} from ${counted(documents.length, 'document')}` : counted(documents.length, 'document'));
-// The sample with its answer's claims taken through `change`, as r3con.trace gave them.
+// The sample with its answer's claims taken through `change`, as r3trace.trace gave them.
 const withClaims = (change) => withSample((sample) => ({ ...sample, answer: { ...sample.answer, provenance: { ...sample.answer.provenance, claims: change(sample.answer.provenance.claims) } } }));
-// Code points `start` to `end` of `text`, as r3con places a claim or a quote.
+// Code points `start` to `end` of `text`, as r3trace places a claim or a quote.
 const codePoints = (text, start, end) => Array.from(text).slice(start, end).join('');
 
 // In-page: each linked sentence in the shown chat: its answer, its text, whether it is a control the keyboard reaches,
@@ -5116,11 +5116,11 @@ async function claimsArea() {
     check('claims', `a sentence's popup not dragged follows its sentence as the chat is widened ${CHAT_DRAG_PX}px by its line`, follows, JSON.stringify({ before, after }));
   });
 
-  // The claim stripped of its evidence, then none, then none at all, as an answer saved before r3con linked them.
+  // The claim stripped of its evidence, then none, then none at all, as an answer saved before r3trace linked them.
   const plainly = {
     'a sentence with no evidence stays plain text': withClaims((claims) => claims.map((c) => ({ ...c, documents: [], quotes: [] }))),
     'an answer whose call found no claims shows nothing extra': withClaims(() => []),
-    'an answer with no claims, as one saved before r3con linked them, shows nothing extra': withClaims(() => undefined),
+    'an answer with no claims, as one saved before r3trace linked them, shows nothing extra': withClaims(() => undefined),
   };
   for (const [name, edit] of Object.entries(plainly)) {
     await withPage('claims', { before: serving(edit) }, async (page) => {
@@ -6468,7 +6468,7 @@ function dragEndsOutside() {
   });
 }
 
-// A folder of documents, two of one name in two folders; a .py, which r3con's folder walk leaves out by its suffix;
+// A folder of documents, two of one name in two folders; a .py, which r3trace's folder walk leaves out by its suffix;
 // a hidden file, Word's lock file, a memo in a hidden folder and one under __MACOSX, which the page leaves out unsaid;
 // and a file the browser can't read. It has more entries than one batch.
 const DROPPED_FOLDER = [
@@ -6514,12 +6514,12 @@ async function dropArea() {
       error: `Not added: moved.txt. ${BROWSER_COULD_NOT_READ}`,
     };
     const folderName =
-      "a folder dropped on the panel is read through every batch its reader gives: only the text, PDF and Word files r3con run reads in a folder, named by their paths below it and kept together, and, as that walk does, nothing hidden or under __MACOSX; a file dropped beside it is taken as it is; the files pane counts as skipped only what was left out by its suffix, and names a file the browser couldn't read";
+      "a folder dropped on the panel is read through every batch its reader gives: only the text, PDF and Word files r3trace run reads in a folder, named by their paths below it and kept together, and, as that walk does, nothing hidden or under __MACOSX; a file dropped beside it is taken as it is; the files pane counts as skipped only what was left out by its suffix, and names a file the browser couldn't read";
     check('drop', folderName, isDeepStrictEqual(folder, expected), JSON.stringify(folder));
 
     await page.evaluate(dropItems, { on: 'panel', items: [['scripts', [['a.py', 'x'], ['b.py', 'x'], ['.DS_Store', 'x']]]] });
     const none = { error: await becomes(page, (text) => document.getElementById('files-error').textContent === text, `${NO_DOCUMENTS}; 2 skipped.`), names: (await page.evaluate(filesPane)).names };
-    check('drop', 'a folder with no file r3con run reads adds nothing, and says how many it skipped', none.error && isDeepStrictEqual(none.names, expected.names), `${await filesError(page)}; ${JSON.stringify(none)}`);
+    check('drop', 'a folder with no file r3trace run reads adds nothing, and says how many it skipped', none.error && isDeepStrictEqual(none.names, expected.names), `${await filesError(page)}; ${JSON.stringify(none)}`);
 
     const many = memoNames(0, MANY_FILES);
     const shortly = (pane) => JSON.stringify({ ...pane, names: `${pane.names.length}: ${pane.names[0]}…${pane.names.at(-1)}` });
@@ -6552,7 +6552,7 @@ async function dropArea() {
     check('drop', lockedName, overLocked.said === DROP_LOCKED && isDeepStrictEqual(refused, lockedExpected), `${JSON.stringify(overLocked)}; ${JSON.stringify(refused)}`);
   });
 
-  const dir = mkdtempSync(join(tmpdir(), 'r3con-folder-'));
+  const dir = mkdtempSync(join(tmpdir(), 'r3trace-folder-'));
   try {
     const picked = join(dir, 'picked');
     for (const [path, text] of [['01_memo.txt', 'A picked memo.\n'], ['sub/02_memo.md', 'A memo in a subfolder.\n'], ['.DS_Store', 'x'], ['notes.py', 'x'], ['.git/03_memo.txt', 'x']]) {
@@ -6692,11 +6692,11 @@ async function stopArea() {
   });
 }
 
-// ---------- live: served by r3con app, with a scripted model ----------
+// ---------- live: served by r3trace app, with a scripted model ----------
 
 // Starts fake_server.py with no provider key in its environment but those in `keys`, in a process group of its own.
 function startFakeServer(keys = {}, args = []) {
-  const logsDir = mkdtempSync(join(tmpdir(), 'r3con-checks-'));
+  const logsDir = mkdtempSync(join(tmpdir(), 'r3trace-checks-'));
   const env = { ...process.env };
   for (const variable of KEY_VARIABLES) delete env[variable];
   Object.assign(env, keys);
@@ -6764,7 +6764,7 @@ function postsOf(page) {
   return posts;
 }
 
-// The page as r3con app opens it: an empty tab, whose panel takes files and folders dropped on it until it has run.
+// The page as r3trace app opens it: an empty tab, whose panel takes files and folders dropped on it until it has run.
 async function liveStart(url) {
   await withPage('live', { url, sample: false }, async (page) => {
     const start = {
@@ -6777,7 +6777,7 @@ async function liveStart(url) {
       hint: await page.innerText('#panel-hint'),
     };
     const empty = { nodes: 0, files: '0', question: '', chat: 0, tabs: [['1 new', true]], status: NO_FILES, hint: DROP_FILES };
-    const startName = 'r3con app opens on an empty tab: no files, no run, no question and nothing in the chat, the status saying so and the panel to drop files';
+    const startName = 'r3trace app opens on an empty tab: no files, no run, no question and nothing in the chat, the status saying so and the panel to drop files';
     check('live', startName, isDeepStrictEqual(start, empty), JSON.stringify(start));
     const [text, middle] = [await boxCentre(page, '#panel-hint-text'), await boxCentre(page, '#panel')];
     const off = { x: Math.abs(text.x - middle.x), y: Math.abs(text.y - middle.y) };
@@ -6956,20 +6956,20 @@ async function liveServers(url) {
 
     const offered = await page.evaluate(menuGroups);
     const places = (await page.evaluate(savedModelRows)).places;
-    // Each place differs from the one before, so each is r3con app's answer for its name.
+    // Each place differs from the one before, so each is r3trace app's answer for its name.
     const defaults = { [onFirst]: first, 'groq/llama': OWN_PROVIDER, 'Qwen/Qwen3-32B': first, [onProvider]: OWN_PROVIDER };
     const placedAs = {};
     for (const [model, place] of Object.entries(defaults)) {
       await page.fill('#model-add', model);
       placedAs[model] = (await becomes(page, placedOn, place)) ? place : (await page.evaluate(savedModelRows)).place;
     }
-    const placesName = "a model to add runs by default where r3con app says: on the first server if self-hosted or a name litellm can't place, on its provider otherwise";
+    const placesName = "a model to add runs by default where r3trace app says: on the first server if self-hosted or a name litellm can't place, on its provider otherwise";
     check('live', placesName, isDeepStrictEqual(places, [OWN_PROVIDER, first, second]) && isDeepStrictEqual(placedAs, defaults), JSON.stringify({ places, placedAs }));
     await page.route('**/api/models/place?*', (route) => route.abort());
     await page.fill('#model-add', 'hosted_vllm/unplaced');
     const lost = await becomes(page, statusIs, LOST_CONNECTION);
     await page.unroute('**/api/models/place?*');
-    check('live', "a model's place asked of r3con app out of reach says so in the status", lost, await page.textContent('#run-status'));
+    check('live', "a model's place asked of r3trace app out of reach says so in the status", lost, await page.textContent('#run-status'));
     await page.fill('#model-add', onFirst);
     await page.press('#model-add', 'Enter');
     await page.fill('#model-add', onSecond);
@@ -7067,12 +7067,12 @@ async function liveParts(url) {
   });
 }
 
-// A memo whose every line fake_server.py's model skips, so its summary is empty in every round and r3con prunes it.
+// A memo whose every line fake_server.py's model skips, so its summary is empty in every round and r3trace prunes it.
 const quietMemo = () => memo('06_quiet_memo.txt', `${QUIET} The canteen's menu for the week.\n${QUIET} Nothing else to report.\n`);
-// A quiet memo says nothing from round 1, so r3con prunes it after round 2, the first round it prunes after.
+// A quiet memo says nothing from round 1, so r3trace prunes it after round 2, the first round it prunes after.
 const QUIET_PRUNED_AFTER = 2;
 // fake_server.py's FADES: a memo holding it says nothing from its FADES_FROM_READ-th read on, its third, the round it
-// is read in when read whole once a round, so r3con prunes it after that round. The server counts reads by a memo's
+// is read in when read whole once a round, so r3trace prunes it after that round. The server counts reads by a memo's
 // text, so each run's has a `tag` of its own.
 const FADES = '(nothing relevant from round 3 on)';
 const FADING_PRUNED_AFTER = 3;
@@ -7090,10 +7090,10 @@ function stageNodes() {
 const pathsIn = (nodes, docs, rounds) =>
   Array.from({ length: docs }, (_, d) => [...roundKinds(rounds), 'parsed'].filter((kind) => nodes.some((id) => id.split(' ')[0] === `${kind}-${d}`)));
 
-// Over the sample memos, a quiet one and a fading one, MAX_ROUNDS rounds: r3con prunes the quiet memo after
+// Over the sample memos, a quiet one and a fading one, MAX_ROUNDS rounds: r3trace prunes the quiet memo after
 // QUIET_PRUNED_AFTER and the fading one after FADING_PRUNED_AFTER, and each one's path ends at its empty node of that
 // round, with no later round's node and no parse node: in the live run, its log, an ask over it, and the tab saved and
-// opened again; and in a run continued after it failed. A tab that says r3con pruned after a round it never prunes
+// opened again; and in a run continued after it failed. A tab that says r3trace pruned after a round it never prunes
 // after is refused; one as r3context 0.6.28 saved it, its pruned memos listed flat, opens as if nothing were pruned.
 async function livePruned(url, server) {
   const [quiet, fading] = [SAMPLE_DOCS, SAMPLE_DOCS + 1];
@@ -7116,7 +7116,7 @@ async function livePruned(url, server) {
     ids = events.find((e) => e.type === 'run_started')?.document_ids ?? [];
     const pruned = events.filter((e) => e.type === 'documents_pruned').map((e) => [e.round, e.doc_ids]);
     const ran = await page.evaluate(stageNodes);
-    const endsName = "a memo pruned after a round, as r3con's events name it with its round, ends its path at its empty node of that round: no later round's node nor a parse node, while the others run on";
+    const endsName = "a memo pruned after a round, as r3trace's events name it with its round, ends its path at its empty node of that round: no later round's node nor a parse node, while the others run on";
     const named = [[QUIET_PRUNED_AFTER, [ids[quiet]]], [FADING_PRUNED_AFTER, [ids[fading]]]];
     check('live', endsName, done && isDeepStrictEqual(pruned, named) && ended(ran), `${JSON.stringify(pruned)}; ${JSON.stringify(paths(ran))}`);
 
@@ -7151,7 +7151,7 @@ async function livePruned(url, server) {
     check('live', 'a follow-up over the tab opened again lands, its pruned paths as they were', again && ended(await page.evaluate(stageNodes)), await page.textContent('#run-status'));
   });
 
-  // As r3context 0.6.28 saved a tab, its pruned memos listed flat, which this r3con does not read.
+  // As r3context 0.6.28 saved a tab, its pruned memos listed flat, which this r3trace does not read.
   const flat = withRelevance(html, ({ pruned_after: after, ...relevance }) => ({ ...relevance, pruned: Object.keys(after) }));
   await withPage('live', { url, sample: false }, async (page) => {
     await page.evaluate(dropItems, { on: 'panel', items: [[SAVED_NAME, flat]] });
@@ -7160,13 +7160,13 @@ async function livePruned(url, server) {
     const flatName = "a tab as r3context 0.6.28 saved it, its pruned memos listed flat, opens, drawing every path whole as if nothing were pruned";
     check('live', flatName, opened && isDeepStrictEqual(paths(shown), Array(SAMPLE_DOCS + 2).fill(whole)), JSON.stringify(paths(shown)));
   });
-  // r3con prunes after a round of the run from round 2 on: a tab that says otherwise is refused.
+  // r3trace prunes after a round of the run from round 2 on: a tab that says otherwise is refused.
   for (const round of [1, MAX_ROUNDS + 1]) {
     const tampered = withRelevance(html, (relevance) => ({ ...relevance, pruned_after: { ...relevance.pruned_after, [ids[quiet]]: round } }));
     await withPage('live', { url, sample: false }, async (page) => {
       await page.evaluate(dropItems, { on: 'panel', items: [[SAVED_NAME, tampered]] });
       const said = await becomes(page, (text) => document.getElementById('files-error').textContent === text, `Not added: ${SAVED_NAME}. ${DAMAGED_SAVE}`, LIVE_RUN_MS);
-      const name = `a saved tab that says r3con pruned a memo after round ${round}, which a run of ${MAX_ROUNDS} rounds never does, is refused as damaged and opens no run`;
+      const name = `a saved tab that says r3trace pruned a memo after round ${round}, which a run of ${MAX_ROUNDS} rounds never does, is refused as damaged and opens no run`;
       check('live', name, said && (await count(page, '#world .node.answer')) === 0, await filesError(page));
     });
   }
@@ -7204,7 +7204,7 @@ async function liveFolderPruned(url) {
     const counts = await stackLinesOf(page, (await folderId(page, 'pruned')).slice('doc-'.length), [...roundKinds(MAX_ROUNDS), 'parsed']);
     const files = memos.length;
     const expected = { r1: [`${files} summaries`, 'round 1'], r2: [`${files} summaries`, 'round 2'], r3: [`${files - 1} summaries`, 'round 3'], r4: [`${files - 2} summaries`, 'round 4'], parsed: [`${files - 2} structures`] };
-    const name = "a closed folder's round and parse nodes end at its files less those r3con pruned before them: all in rounds 1 and 2, one fewer in round 3, two fewer in round 4 and the parse";
+    const name = "a closed folder's round and parse nodes end at its files less those r3trace pruned before them: all in rounds 1 and 2, one fewer in round 3, two fewer in round 4 and the parse";
     check('live', name, done && isDeepStrictEqual(counts, expected), JSON.stringify(counts));
   });
 }
@@ -7212,7 +7212,7 @@ async function liveFolderPruned(url) {
 // fake_server.py's REASONING_BREAKS: a question holding it has every reasoning call raise until the check releases it.
 const REASONING_BREAKS = '(the reasoning breaks)';
 const REASONING_ERROR = "RuntimeError: the check's reasoning is down";
-// What a run's log says once r3con pruned every memo, so that it answers from round 1's notes.
+// What a run's log says once r3trace pruned every memo, so that it answers from round 1's notes.
 const FROM_ROUND_1 = "nothing relevant in the end · answered from round 1's notes";
 // Two fading memos of a run's own `tag`: read whole once a round, both say nothing in round FADING_PRUNED_AFTER.
 const fadingMemos = (tag) => ['01_fading_memo.txt', '02_fading_memo.txt'].map((name) => fadingMemo(name, tag));
@@ -7228,7 +7228,7 @@ async function litTrail(page) {
   return { nodes: named(nodes), edges: named(edges) };
 }
 
-// Over two memos r3con prunes both of after round FADING_PRUNED_AFTER, it answers from their round-1 notes: no
+// Over two memos r3trace prunes both of after round FADING_PRUNED_AFTER, it answers from their round-1 notes: no
 // schema nor parse is drawn, the answer's lines come from round 1, its trail lights through round 1 to the memos,
 // and the log says so once, in the live run, an ask over it, the tab saved and opened again and an ask over that, and
 // a run continued after it failed in reasoning.
@@ -7255,7 +7255,7 @@ async function liveFromRound1(url, server) {
       lit: await litTrail(page),
     };
     const ranExpected = { pruned: [[FADING_PRUNED_AFTER, ids]], structured: 0, nodes: FROM_ROUND_1_NODES, cites: fromRound1(0), lit };
-    const ranName = "a run r3con prunes every memo of reports no schema nor parse, draws no schema nor parse, and its answer's lines and lit trail come from round 1's notes to the memos";
+    const ranName = "a run r3trace prunes every memo of reports no schema nor parse, draws no schema nor parse, and its answer's lines and lit trail come from round 1's notes to the memos";
     check('live', ranName, done && isDeepStrictEqual(ran, ranExpected), JSON.stringify(ran));
 
     await page.focus('.log-toggle');
@@ -7299,7 +7299,7 @@ async function liveFromRound1(url, server) {
   });
 }
 
-// ---------- skips: a note or parse r3con skipped, its reply unusable, and the run that went on without it ----------
+// ---------- skips: a note or parse r3trace skipped, its reply unusable, and the run that went on without it ----------
 
 // fake_server.py's markers, past a memo's first line: notes after round 1 cut off, or every parse off its schema.
 const RUNS_OUT = '(its note runs out after round 1)';
@@ -7318,7 +7318,7 @@ const SKIPPED_LINE = `2 skipped: round-2 note of ${stem(EASTFIELD)} (output cont
 const KEPT_LINES = [`r1-${EASTFIELD}>answer-0`, `r1-${EASTFIELD}>parsed-${EASTFIELD}`];
 const skippedEvents = (ids) => ({ notes: [[2, ids[EASTFIELD], null, 'output context length']], parses: [[ids[REGISTRY], [{ part: null, reason: 'schema error' }]]] });
 
-// The skips r3con's events carry: each note's round, document, part and why, and each parse's document and parts.
+// The skips r3trace's events carry: each note's round, document, part and why, and each parse's document and parts.
 function skipEvents(events) {
   return {
     notes: events.filter((e) => e.type === 'relevance_finished' && e.skipped).map((e) => [e.round, e.doc_id, e.part, e.skipped]),
@@ -7368,7 +7368,7 @@ async function skipsShown(page) {
 
 const keptLit = (lit) => KEPT_LINES.every((key) => lit.edges.includes(key)) && lit.nodes.includes(`r1-${EASTFIELD}`) && !lit.nodes.includes(`r2-${EASTFIELD}`);
 
-// A saved block without what r3con writes of its skips, as a tab saved before r3con skipped holds it.
+// A saved block without what r3trace writes of its skips, as a tab saved before r3trace skipped holds it.
 function withoutSkips(b) {
   const relevance = b.representation['relevance/result.json'];
   const { skipped, ...parsing } = b.representation['structuring/parsing/result.json'];
@@ -7405,9 +7405,9 @@ async function liveSkips(url, server) {
     const expected = { nodes: SKIPPED_NODES, popups: SKIPPED_POPUPS, out: [], lines: [['answer-0', SKIPPED_LINE]] };
     const { nodes, popups, out, lines } = live;
     const shown = { nodes, popups, out, lines };
-    const liveName = "r3con's skips, as its events name them, mark their nodes and nothing else; each popup says only what happened, no line leaves them, and a line under the answer lists them";
+    const liveName = "r3trace's skips, as its events name them, mark their nodes and nothing else; each popup says only what happened, no line leaves them, and a line under the answer lists them";
     check('live', liveName, done && isDeepStrictEqual(said, skippedEvents(ids)) && isDeepStrictEqual(shown, expected), `${JSON.stringify(said)}; ${JSON.stringify(shown)}`);
-    const keptName = "the kept round-1 note reaches the answer and its parse from its own node, and the lit trail is exactly r3con's";
+    const keptName = "the kept round-1 note reaches the answer and its parse from its own node, and the lit trail is exactly r3trace's";
     check('live', keptName, keptLit(lit) && isDeepStrictEqual(lit, trail), JSON.stringify(lit.edges));
 
     await followUp(page, SAVED_ASK);
@@ -7438,7 +7438,7 @@ async function liveSkips(url, server) {
     await page.evaluate(dropItems, { on: 'panel', items: [[SAVED_NAME, withBlock(html, withoutSkips)]] });
     const opened = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
     const shown = { nodes: await page.evaluate(skippedNodes), lines: await page.evaluate(skipLines) };
-    check('live', 'a tab saved before r3con skipped opens, with no skips', opened && isDeepStrictEqual(shown, { nodes: [], lines: [] }), JSON.stringify(shown));
+    check('live', 'a tab saved before r3trace skipped opens, with no skips', opened && isDeepStrictEqual(shown, { nodes: [], lines: [] }), JSON.stringify(shown));
   });
   const damaged = withBlock(html, (b) => {
     b.representation['structuring/parsing/result.json'].skipped[REGISTRY] = [{ part: 'two', reason: 'schema error' }];
@@ -7447,7 +7447,7 @@ async function liveSkips(url, server) {
   await withPage('live', { url, sample: false }, async (page) => {
     await page.evaluate(dropItems, { on: 'panel', items: [[SAVED_NAME, damaged]] });
     const said = await becomes(page, (text) => document.getElementById('files-error').textContent === text, `Not added: ${SAVED_NAME}. ${DAMAGED_SAVE}`, LIVE_RUN_MS);
-    check('live', 'a saved tab whose skips are not as r3con writes them is refused as damaged and opens no run', said && (await count(page, '#world .node.answer')) === 0, await filesError(page));
+    check('live', 'a saved tab whose skips are not as r3trace writes them is refused as damaged and opens no run', said && (await count(page, '#world .node.answer')) === 0, await filesError(page));
   });
 
   await withPage('live', { url, sample: false }, async (page) => {
@@ -7466,7 +7466,7 @@ async function liveSkips(url, server) {
   });
 }
 
-// Each run folder's events.jsonl in `logsDir` as r3con wrote it before it skipped: without its events' skipped fields.
+// Each run folder's events.jsonl in `logsDir` as r3trace wrote it before it skipped: without its events' skipped fields.
 function withoutSkippedEvents(logsDir) {
   for (const folder of readdirSync(logsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory())) {
     const file = join(logsDir, folder.name, 'events.jsonl');
@@ -7479,7 +7479,7 @@ function withoutSkippedEvents(logsDir) {
   }
 }
 
-// A continue replays a run's events, which a folder written before r3con skipped holds without skips.
+// A continue replays a run's events, which a folder written before r3trace skipped holds without skips.
 async function liveContinueOlderEvents(url, server) {
   await withPage('live', { url, sample: false, memos: true }, async (page) => {
     await send(page, `Which site logged the most incidents? ${REASONING_BREAKS}`);
@@ -7493,7 +7493,7 @@ async function liveContinueOlderEvents(url, server) {
       { note: '', outputs: ['.insp-text', '.trail-line', 'details'] },
       { note: '', outputs: ['pre.code', 'details'] },
     ];
-    const olderName = "a run continued from events written before r3con skipped shows its notes' and parses' popups, with no skips";
+    const olderName = "a run continued from events written before r3trace skipped shows its notes' and parses' popups, with no skips";
     check('live', olderName, failed && done && isDeepStrictEqual(popups, expected), JSON.stringify(popups));
   });
 }
@@ -7549,7 +7549,7 @@ async function liveSkippedParts(url) {
     const citing = { ...answer.trail, edges: answer.trail.edges.filter(([from, , kind]) => kind === 'cites' && !from.startsWith('summary:')) };
     const trail = trailOnPage(citing, answer.ids, docIds).edges;
     const drawn = (await page.$$eval('#world .edge.cite', (els) => els.map((el) => el.dataset.key))).filter((key) => citers.includes(key.split('>')[1])).sort();
-    const citesName = "the answer's and its parses' cite lines are exactly r3con's trail: the kept part's note from round 1's node, and none from the other part's round";
+    const citesName = "the answer's and its parses' cite lines are exactly r3trace's trail: the kept part's note from round 1's node, and none from the other part's round";
     check('live', citesName, trail.includes(`r1-${SPLIT_MEMO_INDEX}>answer-0`) && isDeepStrictEqual(drawn, trail), `${drawn.join(', ')} | trail ${trail.join(', ')}`);
   });
 }
@@ -7617,7 +7617,7 @@ async function skipsArea() {
 
 // fake_server.py's UNPARSED: a document holding it parses to nothing.
 const UNPARSED = '(nothing to parse here)';
-// Enough quiet paragraphs that fake_server.py refuses the memo whole, past PART_CHARS, so r3con reads it in parts.
+// Enough quiet paragraphs that fake_server.py refuses the memo whole, past PART_CHARS, so r3trace reads it in parts.
 const QUIET_PARAGRAPHS = 40;
 // A folded run's memos: those in `relevant` say something relevant; the others say nothing, and parse to nothing
 // unless `parsed`. The memo `inParts` is read in parts, none relevant, and `relevantInParts` in parts, its second
@@ -7639,7 +7639,7 @@ const FAINT_RUNS = [
 ];
 const UNFOLDED_RUN = { docs: 8, relevant: [1, 3, 4, 6] };
 // Its quiet memos parse to records, as a real model's may: only a summary, or the answer's trail, brings one out. It runs
-// FEWER_ROUNDS, one, so that r3con prunes none of them.
+// FEWER_ROUNDS, one, so that r3trace prunes none of them.
 const PARSED_RUN = { docs: 150, relevant: [25, 75, 76, 125], parsed: true };
 const LONG_TASK_MS = 200;
 
@@ -7718,7 +7718,7 @@ async function liveFolds(url, server) {
     const lit = await litOnPanel(page);
     const cited = answer.trail.cited.summary_ids.map((id) => fileNode(answer.ids.indexOf(id)));
     const unfolded = cited.length > 0 && cited.every((id) => lit.nodes.includes(id));
-    const trailName = "the answer's trail is lit along r3con's, through the cited documents' own rows between the folds";
+    const trailName = "the answer's trail is lit along r3trace's, through the cited documents' own rows between the folds";
     const between = isDeepStrictEqual(rows, FOLD_RUN_ROWS);
     check('live', trailName, between && unfolded && isDeepStrictEqual(lit, expected), `${lit.edges.length} lines lit, ${expected.edges.length} on the trail; cited ${cited.join(' ')}; ${rows.length} rows`);
 
@@ -7880,7 +7880,7 @@ async function liveFoldsJoined(url, server) {
   });
 }
 
-// Its one relevant line comes after emoji, a code point each to r3con and two UTF-16 code units each here.
+// Its one relevant line comes after emoji, a code point each to r3trace and two UTF-16 code units each here.
 const ROADWORKS_LINE = 'The 🚧 Westgate site logged 4 equipment incidents in Q3.';
 const roadworksMemo = () => memo('00_roadworks.txt', `🚧🚧 ${QUIET} Roadworks notice.\n${ROADWORKS_LINE}\nSite manager: Ana Ruiz.\n`);
 
@@ -7905,7 +7905,7 @@ async function liveQuotes(url) {
     const partLine = scriptedSummary(splitMemo().buffer.toString());
     const marked = isDeepStrictEqual(roadworks, [ROADWORKS_LINE]) && isDeepStrictEqual(pills, [[docIds[0], '1'], [docIds[1], '1']]);
     const listed = list?.line === SCRIPTED_SENTENCES && isDeepStrictEqual(list.docs, quoted);
-    const name = "each quote lands on its sentence however its document was read: past emoji, a code point each to r3con and two code units here, and in a document read in parts, in its second part";
+    const name = "each quote lands on its sentence however its document was read: past emoji, a code point each to r3trace and two code units here, and in a document read in parts, in its second part";
     check('live', name, done && marked && listed && flash === partLine, `${JSON.stringify(roadworks)}; ${JSON.stringify(pills)}; ${list?.line}; flashed ${JSON.stringify(flash)}`);
     const [answer] = await page.evaluate(answersRead);
     const docs = memos.map((m) => ({ name: m.name, text: m.buffer.toString() }));
@@ -7917,7 +7917,7 @@ async function liveQuotes(url) {
 // In-page: how many of the events streamed carry quotes, a relevance summary's or an answer's.
 const quotingEvents = () => window.events.filter((e) => (e.quotes ?? e.provenance?.relevant_trail?.quotes ?? []).length > 0).length;
 
-// With document level chosen, r3con quotes nothing, yet the files list still dims only the documents off the answer's
+// With document level chosen, r3trace quotes nothing, yet the files list still dims only the documents off the answer's
 // trail.
 async function liveDocumentLevel(url) {
   const before = (page) => page.addInitScript(recordEvents);
@@ -7945,7 +7945,7 @@ async function liveDocumentLevel(url) {
 }
 
 // Lines of about 70 characters: past fake_server.py's PART_CHARS, 2,000, so it refuses them whole, and few enough
-// that each half fits, so r3con reads them in exactly two parts.
+// that each half fits, so r3trace reads them in exactly two parts.
 const TWO_PART_LINES = 48;
 
 // Relevant throughout, so each of its two parts quotes a line.
@@ -8016,11 +8016,11 @@ async function liveRounds(url) {
 }
 
 // A live run of `rounds` summary rounds, chosen in the settings, is sent them, planned for them from its first frame,
-// and draws every round, wired as r3con's events say.
+// and draws every round, wired as r3trace's events say.
 async function liveRoundsOf(url, rounds) {
   await withPage('live', { url, sample: false, memos: true, before: (page) => page.addInitScript(recordEvents) }, async (page) => {
     let posted = null;
-    // Held for some frames, so what they show is the page's own plan, before r3con app has said a thing.
+    // Held for some frames, so what they show is the page's own plan, before r3trace app has said a thing.
     await page.route('**/api/runs', async (route) => {
       posted = route.request().postDataJSON();
       await page.waitForFunction((frames) => window.runFrames.length >= frames, HELD_FRAMES);
@@ -8201,7 +8201,7 @@ async function liveAskAndFollowUp(url) {
     const before = (await page.evaluate(composer)).buttons;
     await send(page, 'Which site logged the most incidents?');
     const ran = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
-    const firstName = 'before a run the composer offers ask ⏎ alone, and the first ask in a tab runs r3con on its files';
+    const firstName = 'before a run the composer offers ask ⏎ alone, and the first ask in a tab runs r3trace on its files';
     check('live', firstName, isDeepStrictEqual(before, ASK_ONLY) && ran && isDeepStrictEqual(posts, ['/api/runs']), `${before}; ${posts.join(' ')}`);
 
     const after = (await page.evaluate(composer)).buttons;
@@ -8270,7 +8270,7 @@ async function liveLog(url) {
     await page.keyboard.press('Enter');
     const opened = await page.evaluate(logOf);
     const [sent, ...steps] = stepsOf(opened);
-    const sentFirst = sent?.[0].startsWith(`sent ${SAMPLE_DOCS} documents to R3Con · `) && sent[1] === 0;
+    const sentFirst = sent?.[0].startsWith(`sent ${SAMPLE_DOCS} documents to R3Trace · `) && sent[1] === 0;
     const listed = opened.open && sentFirst && isDeepStrictEqual(steps, RUN_STEPS);
     check('live', "Enter on its chevron opens the log: what was sent, then each step in turn with its documents' lines under it", listed, JSON.stringify(stepsOf(opened)));
     const docs = recordedSample().docs;
@@ -8458,7 +8458,7 @@ async function liveFailure(url) {
     const started = runPosted(page);
     await send(page, 'Which site logged the most incidents?');
     const ran = (await started) !== null && (await becomes(page, newRunDone, LIVE_DONE.source, LIVE_RUN_MS));
-    check('live', 'after a failed run the button still reads ask ⏎, and the next ask runs r3con again', label === 'ask ⏎' && ran, `${label}; ran ${ran}`);
+    check('live', 'after a failed run the button still reads ask ⏎, and the next ask runs r3trace again', label === 'ask ⏎' && ran, `${label}; ran ${ran}`);
   });
 }
 
@@ -8486,7 +8486,7 @@ async function livePdf(url) {
     const sentToApp = isDeepStrictEqual(posts, Array(5).fill('/api/documents/text'));
     const refusals = `Not added: 02_scan.pdf. ${SCANNED} Not added: 04_locked.pdf. ${PASSWORD_PROTECTED} Not added: 05_broken.pdf. ${NOT_A_PDF}`;
     const scanRefused = error === refusals && isDeepStrictEqual(listed, ['remove 01_memo.pdf', 'remove 03_padded.pdf']);
-    const scanName = "each PDF added goes to r3con app for its text, and a scan, one with a password and one that isn't a PDF are each refused as they are added, named, saying why";
+    const scanName = "each PDF added goes to r3trace app for its text, and a scan, one with a password and one that isn't a PDF are each refused as they are added, named, saying why";
     check('live', scanName, two && sentToApp && scanRefused, `${listed.join(', ')}; ${error}; ${posts.join(', ')}`);
 
     const shown = await openFileView(page, '01_memo.pdf');
@@ -8498,7 +8498,7 @@ async function livePdf(url) {
     await page.click('#run-btn');
     const sent = (await started)?.postDataJSON().documents;
     const bytes = Buffer.byteLength(PDF_TEXT + PADDED_TEXT);
-    const counted = await becomes(page, lastTurnSays, [`sent 2 documents to R3Con · ${bytes} B`]);
+    const counted = await becomes(page, lastTurnSays, [`sent 2 documents to R3Trace · ${bytes} B`]);
     const runName = "a run is sent the PDFs' extracted texts, and says it sent their size, not the PDFs'";
     const said = (await page.evaluate(lastTurnLines)).find((text) => text.startsWith('sent '));
     check('live', runName, isDeepStrictEqual(sent, [PDF_TEXT, PADDED_TEXT]) && counted, `${JSON.stringify(sent)}; ${said}`);
@@ -8534,7 +8534,7 @@ async function liveBatches(url) {
   });
 }
 
-// A kind of file r3con app extracts as Markdown, added with one of its kind that has no text: each goes to r3con app for its
+// A kind of file r3trace app extracts as Markdown, added with one of its kind that has no text: each goes to r3trace app for its
 // text and the blank one is refused, and the other's Markdown is shown, sent, and marked where the answer quotes its first line.
 async function liveExtracted(url, { kind, files, kept, blank, text, leftOut = '' }) {
   await withPage('live', { url, sample: false, question: true }, async (page) => {
@@ -8546,7 +8546,7 @@ async function liveExtracted(url, { kind, files, kept, blank, text, leftOut = ''
     const error = await filesError(page);
     const sentToApp = isDeepStrictEqual(posts, Array(2).fill('/api/documents/text'));
     const blankRefused = error === `Not added: ${blank}. ${NO_TEXT}` && isDeepStrictEqual(listed, [`remove ${kept.name}`]);
-    const blankName = `each ${kind} added goes to r3con app for its text, one with none is refused as it is added, named, saying why${leftOut}`;
+    const blankName = `each ${kind} added goes to r3trace app for its text, one with none is refused as it is added, named, saying why${leftOut}`;
     check('live', blankName, one && sentToApp && blankRefused, `${listed.join(', ')}; ${error}; ${posts.join(', ')}`);
 
     const shown = await openFileView(page, kept.name);
@@ -8576,7 +8576,7 @@ const liveWord = (url) =>
     leftOut: ", and Word's lock file is left out",
   });
 
-// A web page, and the Markdown r3con makes of it: its script left out, its link's text kept without the URL.
+// A web page, and the Markdown r3trace makes of it: its script left out, its link's text kept without the URL.
 const HTML_PAGE = {
   name: 'report.html',
   mimeType: 'text/html',
@@ -8590,7 +8590,7 @@ const HTML_TEXT = 'Halloran logged **7** incidents, as the Q3 report says.\n\n| 
 const BLANK_HTM = { name: 'blank.htm', mimeType: 'text/html', buffer: Buffer.from('<script>var site;</script>\n') };
 const liveHtml = (url) => liveExtracted(url, { kind: 'web page', files: [HTML_PAGE, BLANK_HTM], kept: HTML_PAGE, blank: BLANK_HTM.name, text: HTML_TEXT });
 
-// The approved icon for each suffix r3con reads, kept apart from the page's SUFFIX_TYPES so that a changed one fails.
+// The approved icon for each suffix r3trace reads, kept apart from the page's SUFFIX_TYPES so that a changed one fails.
 const DOC_TYPES = {
   '.txt': 'text',
   '.pdf': 'pdf',
@@ -8725,7 +8725,7 @@ async function liveUnreadable(url) {
   });
 }
 
-// A zip dropped on the panel goes to r3con app, which unpacks it; its documents are added and run as dropped files are.
+// A zip dropped on the panel goes to r3trace app, which unpacks it; its documents are added and run as dropped files are.
 async function liveZip(url) {
   const zipped = (name) => [name, { bytes: [...documents[name].buffer] }];
   await withPage('live', { url, sample: false, question: true, expectedErrors: [REFUSED_LOG] }, async (page) => {
@@ -8738,7 +8738,7 @@ async function liveZip(url) {
       error: `Not added: broken.zip. ${UNREADABLE_ZIP} Not added: 02_blank.txt. ${NO_TEXT} Not added: 03_broken.pdf. ${NOT_A_PDF} Not added: photos.zip. ${NO_DOCUMENTS}; 1 skipped.`,
     };
     const name =
-      "zips dropped on the panel are unpacked by r3con app: their documents are added by their paths below the folder they share, one with no text is refused, a PDF saying why, the files pane counts what was left out by its suffix, and a zip with no documents, or one r3con app can't open, is refused saying so";
+      "zips dropped on the panel are unpacked by r3trace app: their documents are added by their paths below the folder they share, one with no text is refused, a PDF saying why, the files pane counts what was left out by its suffix, and a zip with no documents, or one r3trace app can't open, is refused saying so";
     check('live', name, isDeepStrictEqual(pane, expected), JSON.stringify(pane));
     await page.click('#tab-chat');
     const started = runPosted(page);
@@ -8756,14 +8756,14 @@ async function liveZip(url) {
   });
 }
 
-// The first event of the run `runId`, as r3con app replays its stream to a late reader.
+// The first event of the run `runId`, as r3trace app replays its stream to a late reader.
 async function runStarted(url, runId) {
   const response = await fetch(new URL(`/api/runs/${runId}/events`, url), { headers: { Authorization: `Bearer ${tokenOf(url)}` } });
   const first = (await response.text()).split('\n').find((line) => line.startsWith('data: '));
   return JSON.parse(first.slice('data: '.length));
 }
 
-// Two files of one name, and a third: each is sent with its name, and r3con app names the run's documents by them.
+// Two files of one name, and a third: each is sent with its name, and r3trace app names the run's documents by them.
 async function liveNames(url) {
   await withPage('live', { url, sample: false, question: true }, async (page) => {
     const memos = [memo('notes.txt', 'A memo.\n'), memo('notes.txt', 'Another memo.\n'), memo('plan.txt', 'A plan.\n')];
@@ -8778,7 +8778,7 @@ async function liveNames(url) {
     const pairs = sent.names?.map((name, i) => [name, sent.documents[i]]);
     const paired = isDeepStrictEqual(pairs, memos.map((m) => [m.name, m.buffer.toString()]));
     const numbered = isDeepStrictEqual(named, ['notes.txt', 'notes.txt (2)', 'plan.txt']);
-    const name = "a run is sent each file's name beside its text, and r3con app names the run's documents by them, a name sent twice numbered the second time";
+    const name = "a run is sent each file's name beside its text, and r3trace app names the run's documents by them, a name sent twice numbered the second time";
     check('live', name, done && paired && numbered, `${JSON.stringify(sent.names)}; ${JSON.stringify(named)}`);
     check('live', `with no rounds chosen, a run is sent summary_rounds ${ROUNDS}`, sent.summary_rounds === ROUNDS, JSON.stringify(sent.summary_rounds));
     check('live', `with no ${EVIDENCE_LABEL} chosen, a run is sent evidence_level "sentence"`, sent.evidence_level === 'sentence', JSON.stringify(sent.evidence_level));
@@ -8786,7 +8786,7 @@ async function liveNames(url) {
   });
 }
 
-// The run's manifest, as r3con wrote it in its folder, which the run's first event names.
+// The run's manifest, as r3trace wrote it in its folder, which the run's first event names.
 const runManifest = async (url, runId) => JSON.parse(readFileSync(join((await runStarted(url, runId)).run_dir, 'manifest.json'), 'utf8'));
 
 // Each run and follow-up is sent the cap the field holds as it is sent.
@@ -8940,7 +8940,7 @@ async function liveExtractionsAtOnce(url) {
     release();
     await removeButton(page, names.at(-1)).waitFor({ timeout: LIVE_RUN_MS });
     const pane = (await page.evaluate(filesPane)).names;
-    const name = `a batch's PDFs are sent to r3con app ${EXTRACTIONS_AT_ONCE} at a time, the first ones by name, and every one is added`;
+    const name = `a batch's PDFs are sent to r3trace app ${EXTRACTIONS_AT_ONCE} at a time, the first ones by name, and every one is added`;
     const bounded = isDeepStrictEqual(atOnce, names.slice(0, EXTRACTIONS_AT_ONCE)) && isDeepStrictEqual(asked.toSorted(), names) && isDeepStrictEqual(pane, names);
     check('live', name, reading && bounded, JSON.stringify({ reading, atOnce, asked: asked.length, added: pane.length }));
   });
@@ -9124,7 +9124,7 @@ async function liveLoadProblem(url) {
     await page.keyboard.press('Escape');
     const status = await page.textContent('#run-status');
     const cleared = saved && status === `${SAMPLE_DOCS} documents ready · ${DEFAULT_MODEL}`;
-    const problemName = 'a connection lost at load stays in the status, through typing and a 500, until a call to r3con app succeeds';
+    const problemName = 'a connection lost at load stays in the status, through typing and a 500, until a call to r3trace app succeeds';
     check('live', problemName, atLoad && typing && unwell && cleared, `typing ${typing}; 500 ${unwell}; then ${status}`);
   });
 }
@@ -9158,7 +9158,7 @@ async function liveStaleToken(url) {
     await page.goto(url);
     const [keys] = await Promise.all([page.waitForResponse((r) => new URL(r.url()).pathname === '/api/keys'), page.reload()]);
     const kept = await page.evaluate((key) => sessionStorage.getItem(key), LAUNCH_KEY);
-    const replacedName = "a launch's URL opened in a tab that kept another token takes its place there, and a reload then reaches r3con app";
+    const replacedName = "a launch's URL opened in a tab that kept another token takes its place there, and a reload then reaches r3trace app";
     check('live', replacedName, keys.status() === 200 && kept === new URL(url).hash.slice(1), `${keys.status()}; kept ${kept}`);
   });
 }
@@ -9374,7 +9374,7 @@ async function liveContinueStopped(url, server) {
   });
 }
 
-// The run's memos, continued around the page through r3con app's API: the new job's id.
+// The run's memos, continued around the page through r3trace app's API: the new job's id.
 async function continueElsewhere(url, runId) {
   const memos = sampleMemos();
   const response = await fetch(new URL(`/api/runs/${runId}/continue`, url), {
@@ -9385,7 +9385,7 @@ async function continueElsewhere(url, runId) {
   return (await response.json()).run_id;
 }
 
-// Reads the job's stream through r3con app's API to its end.
+// Reads the job's stream through r3trace app's API to its end.
 async function streamedOut(url, runId) {
   await (await fetch(new URL(`/api/runs/${runId}/events`, url), { headers: { Authorization: `Bearer ${tokenOf(url)}` } })).text();
 }
@@ -9403,7 +9403,7 @@ async function stoppedRun(page, server) {
   return runId;
 }
 
-// What r3con app answers the page's continue, once it is clicked: its status and body.
+// What r3trace app answers the page's continue, once it is clicked: its status and body.
 async function continueAnswered(page) {
   const answered = startedJob(page, '/continue');
   await page.click(CONTINUE_BUTTON);
@@ -9469,7 +9469,7 @@ async function liveContinueFixable(url, server) {
   });
 }
 
-// r3con app refuses every run before it starts; the page's stop is pressed before the run's id comes back.
+// r3trace app refuses every run before it starts; the page's stop is pressed before the run's id comes back.
 async function liveStoppedUnstarted(url) {
   let letThrough;
   const posted = new Promise((resolve) => (letThrough = resolve));
@@ -9484,7 +9484,7 @@ async function liveStoppedUnstarted(url) {
     letThrough();
     const stopped = await becomes(page, statusIs, STOPPED, LIVE_RUN_MS);
     const ended = await afterContinue(page);
-    check('live', 'a run stopped before it started, and refused by r3con, has no folder to continue: none is offered', stopped && ended.offered === 0, JSON.stringify(ended));
+    check('live', 'a run stopped before it started, and refused by r3trace, has no folder to continue: none is offered', stopped && ended.offered === 0, JSON.stringify(ended));
   });
 }
 
@@ -9494,7 +9494,7 @@ function firstEventOf(server) {
   return JSON.parse(readFileSync(join(server.logsDir, folder, 'events.jsonl'), 'utf8').split('\n')[0]);
 }
 
-// A continue's answer and stream, served in r3con app's place: it starts the round-2 call of the first document again,
+// A continue's answer and stream, served in r3trace app's place: it starts the round-2 call of the first document again,
 // then fails before any stage, with no code, as a full disk would fail it.
 async function liveContinueRedrawn(url, server) {
   const failure = 'OSError: [Errno 28] No space left on device';
@@ -9564,12 +9564,12 @@ async function liveContinueLost(url, server) {
     await server.stop();
     const lost = await becomes(page, statusIs, LOST_CONNECTION, LIVE_RUN_MS);
     const ended = await afterContinue(page);
-    const lostName = 'a continue cut off from r3con app says the connection was lost, and offers continue again';
+    const lostName = 'a continue cut off from r3trace app says the connection was lost, and offers continue again';
     check('live', lostName, lost && isDeepStrictEqual(ended.after, [LOST_CONNECTION.slice(2), CONTINUE_LINE]) && ended.offered === 1, JSON.stringify(ended));
   });
 }
 
-// Stalls two asks' calls until it releases them; their replies then miss their schema, so r3con would send again.
+// Stalls two asks' calls until it releases them; their replies then miss their schema, so r3trace would send again.
 async function liveStopAsk(url, server) {
   await withPage('live', { url, sample: false, memos: true }, async (page) => {
     const posts = postsOf(page);
@@ -9661,7 +9661,7 @@ async function liveStopLate(url) {
 
 // A copy of the page served from another host must not take a token or call any API.
 async function liveElsewhere() {
-  const elsewhere = 'http://r3con.example/';
+  const elsewhere = 'http://r3trace.example/';
   const calls = [];
   const before = (page) => {
     page.on('request', (request) => request.url().includes('/api/') && calls.push(request.url()));
@@ -9695,19 +9695,19 @@ const SAVED_ANSWERS = 2;
 // How much of a differing part of the page a check's detail quotes.
 const DETAIL_CHARS = 300;
 const savedHolds = (n) => `The file includes the full text of this tab's ${n} files.`;
-const SAVED_NOTE = 'open this file in R3Con to ask more';
+const SAVED_NOTE = 'open this file in R3Trace to ask more';
 // The page's SAVED_VERSION, whose files add each answer's claims to version 1's.
 const SAVED_VERSION = 2;
 const SAVED_BLOCK = /<script type="application\/json" id="r3con-tab">([\s\S]*?)<\/script>/;
 // What an answer in the file holds: what the page shows of it, and never the server it ran on.
 const SAVED_ANSWER_FIELDS = ['claims', 'model', 'provenance', 'question', 'text', 'totals'];
-// r3con app's REPRESENTATION_FILES: each file of a run's folder an ask reads.
+// r3trace app's REPRESENTATION_FILES: each file of a run's folder an ask reads.
 const REPRESENTATION_FILES = ['manifest.json', 'ids.json', 'names.json', 'relevance/result.json', 'structuring/schema/result.json', 'structuring/parsing/result.json'];
-const NEWER_SAVE = 'It holds a tab saved by a newer R3Con: update R3Con to open it.';
-const DAMAGED_SAVE = "It holds a saved tab R3Con can't read: it may have been changed since it was saved.";
-const TOO_BIG_SAVE = 'Its saved tab holds more text than R3Con takes in a run.';
-// r3con app's UNREADABLE_IMPORT, and the page's MAX_SAVED_TEXT_BYTES.
-const UNREADABLE_IMPORT = "Its run can't be asked again: it isn't a run this R3Con can read.";
+const NEWER_SAVE = 'It holds a tab saved by a newer R3Trace: update R3Trace to open it.';
+const DAMAGED_SAVE = "It holds a saved tab R3Trace can't read: it may have been changed since it was saved.";
+const TOO_BIG_SAVE = 'Its saved tab holds more text than R3Trace takes in a run.';
+// r3trace app's UNREADABLE_IMPORT, and the page's MAX_SAVED_TEXT_BYTES.
+const UNREADABLE_IMPORT = "Its run can't be asked again: it isn't a run this R3Trace can read.";
 const MAX_SAVED_TEXT_BYTES = 64 * 1024 * 1024;
 const IMPORTED_ASK = 'Which site is quietest?';
 const HARMLESS = 'A harmless summary, shown in place of what is asked over.';
@@ -9794,7 +9794,7 @@ const UNKNOWN_DOCUMENT = 'ffffff';
 const runFolders = (server) => readdirSync(server.logsDir, { withFileTypes: true }).filter((entry) => entry.isDirectory()).length;
 const tabCount = (page) => page.$$eval('.run-tab', (els) => els.length);
 
-// Dropped back on r3con app, a saved tab's file opens as it was saved, is asked again, and saves with its new ask.
+// Dropped back on r3trace app, a saved tab's file opens as it was saved, is asked again, and saves with its new ask.
 async function liveImport(url, server) {
   let html;
   let live;
@@ -9817,7 +9817,7 @@ async function liveImport(url, server) {
 
     await followUp(page, IMPORTED_ASK);
     const asked = await becomes(page, landedNode, 'answer-2', LIVE_RUN_MS);
-    const askedName = 'it is live: a new follow-up goes to r3con app over the run it made again from the file, and lands as the third answer';
+    const askedName = 'it is live: a new follow-up goes to r3trace app over the run it made again from the file, and lands as the third answer';
     check('live', askedName, asked && posts.length === 2 && posts[0] === '/api/imports' && /^\/api\/runs\/\w+\/asks$/.test(posts[1]), posts.join(' '));
     const linked = await becomes(page, () => document.querySelector('.line.answer[data-node="answer-2"] .claim') !== null, null, LIVE_RUN_MS);
     check('live', "the new follow-up's answer is linked by its own claims, beside those the file kept", linked && (await count(page, `${CHAT} .claim`)) === SAVED_ANSWERS + 1);
@@ -9905,7 +9905,7 @@ async function liveSaved(url) {
   for (const body of [{ provider: 'openai', key: TEST_KEY }, { provider: 'other', endpoint: TEST_ENDPOINT, key: ENVIRONMENT_KEY }]) {
     await fetch(new URL('/api/keys', url), { method: 'POST', headers, body: JSON.stringify(body) });
   }
-  const dir = mkdtempSync(join(tmpdir(), 'r3con-saved-'));
+  const dir = mkdtempSync(join(tmpdir(), 'r3trace-saved-'));
   try {
     const file = join(dir, SAVED_NAME);
     let live;
@@ -9937,10 +9937,10 @@ async function liveSaved(url) {
       texts: JSON.parse(gunzipSync(Buffer.from(block.texts, 'base64')).toString()),
       representation: Object.keys(block.representation),
     };
-    const holdsName = `the file holds the tab as one JSON block of version ${SAVED_VERSION}: each file's name and dropped folder, their texts gzipped, and r3con app's representation of the run`;
+    const holdsName = `the file holds the tab as one JSON block of version ${SAVED_VERSION}: each file's name and dropped folder, their texts gzipped, and r3trace app's representation of the run`;
     check('live', holdsName, isDeepStrictEqual(held, { version: SAVED_VERSION, names, folders, texts, representation: REPRESENTATION_FILES }), JSON.stringify({ ...held, texts: held.texts.length }));
     const claimed = block.run.answers.map((answer) => answer.claims?.map((c) => [c.text, c.documents.length > 0]));
-    const claimedName = "each answer in it keeps its claims as r3con gave them: the scripted sentence with its evidence, and the one without";
+    const claimedName = "each answer in it keeps its claims as r3trace gave them: the scripted sentence with its evidence, and the one without";
     check('live', claimedName, isDeepStrictEqual(claimed, Array(SAVED_ANSWERS).fill([[SCRIPTED_LINKED, true], [SCRIPTED_UNLINKED, false]])), JSON.stringify(claimed));
     const kept = [TEST_KEY, ENVIRONMENT_KEY, TEST_ENDPOINT, tokenOf(url)].filter((secret) => html.includes(secret));
     const fields = [...new Set(block.run.answers.flatMap((answer) => Object.keys(answer)))].sort();
@@ -9965,8 +9965,8 @@ async function liveSaved(url) {
         note: await page.textContent('#mode-note'),
         title: await page.title(),
       };
-      const viewOnlyName = 'it is view-only: no ask box, new tab, settings, save or replay, and a quiet line says to open the file in R3Con to ask more';
-      check('live', viewOnlyName, isDeepStrictEqual(viewOnly, { hidden: true, note: SAVED_NOTE, title: `${SAVED_QUESTION} · ❀ R3Con` }), JSON.stringify(viewOnly));
+      const viewOnlyName = 'it is view-only: no ask box, new tab, settings, save or replay, and a quiet line says to open the file in R3Trace to ask more';
+      check('live', viewOnlyName, isDeepStrictEqual(viewOnly, { hidden: true, note: SAVED_NOTE, title: `${SAVED_QUESTION} · ❀ R3Trace` }), JSON.stringify(viewOnly));
       const clicked = await answerAndFileShown(page);
       const clickedName = "the run's answer, clicked in its chat, lights its sources, and a file opened marks the sentences quoted, as in the live page";
       check('live', clickedName, clicked.lit.length > 0 && clicked.marks?.marks.length > 0 && isDeepStrictEqual(clicked, liveClicked), JSON.stringify(clicked));
@@ -10002,7 +10002,7 @@ const CANCELLED_NAME = 'which-site-logged-the-most-incidents-cancel-the-save.htm
 const RELOADED_QUESTION = `${SAVED_QUESTION} (after a reload)`;
 const RELOADED_NAME = 'which-site-logged-the-most-incidents-after-a-reload.html';
 
-// Runs `question` over the sample memos and saves the tab: r3con app's answer to the save, the status line once an error
+// Runs `question` over the sample memos and saves the tab: r3trace app's answer to the save, the status line once an error
 // shows there or none has in SETTLE_TIMEOUT_MS, and what the page downloaded.
 async function savedThroughDialog(page, question) {
   const downloads = [];
@@ -10015,13 +10015,13 @@ async function savedThroughDialog(page, question) {
   return { answered: answered.status(), status: await page.textContent('#run-status'), downloads };
 }
 
-// In the Mac app, whose web view has no downloads, a tab is saved through r3con app's Save dialog.
+// In the Mac app, whose web view has no downloads, a tab is saved through r3trace app's Save dialog.
 async function liveSaveDialog(url, server) {
   const saved = (name) => join(server.logsDir, DIALOG_FOLDER, name);
   await withPage('live', { url, sample: false, memos: true }, async (page) => {
     const { answered, status, downloads } = await savedThroughDialog(page, SAVED_QUESTION);
     const held = existsSync(saved(SAVED_NAME)) && JSON.parse(SAVED_BLOCK.exec(readFileSync(saved(SAVED_NAME), 'utf8'))[1]);
-    const savedName = "with r3con app's Save dialog, save sends the file there, under the question's name, and the page downloads nothing";
+    const savedName = "with r3trace app's Save dialog, save sends the file there, under the question's name, and the page downloads nothing";
     check('live', savedName, answered === 204 && LIVE_DONE.test(status) && !downloads.length && held?.version === SAVED_VERSION, `${answered}; ${status}; ${downloads}`);
   });
   await withPage('live', { url, sample: false }, async (page) => {
@@ -10029,7 +10029,7 @@ async function liveSaveDialog(url, server) {
     await page.reload();
     await addMemos(page);
     const { answered, status, downloads } = await savedThroughDialog(page, RELOADED_QUESTION);
-    const reloadedName = "after a reload, save still goes through r3con app's Save dialog, and the page downloads nothing";
+    const reloadedName = "after a reload, save still goes through r3trace app's Save dialog, and the page downloads nothing";
     check('live', reloadedName, answered === 204 && LIVE_DONE.test(status) && !downloads.length && existsSync(saved(RELOADED_NAME)), `${answered}; ${status}; ${downloads}`);
   });
   await withPage('live', { url, sample: false, memos: true }, async (page) => {
@@ -10039,11 +10039,11 @@ async function liveSaveDialog(url, server) {
   });
   await withPage('live', { url, sample: false, memos: true, expectedErrors: [SERVER_ERROR_LOG] }, async (page) => {
     const { answered, status } = await savedThroughDialog(page, NO_ROOM_QUESTION);
-    check('live', "a save the dialog's folder can't take says so in the status, in r3con app's words", answered === 500 && status === UNWRITABLE_SAVE, `${answered}; ${status}`);
+    check('live', "a save the dialog's folder can't take says so in the status, in r3trace app's words", answered === 500 && status === UNWRITABLE_SAVE, `${answered}; ${status}`);
   });
 }
 
-// What r3con app's Mac window opens the page with: its traffic lights then sit in the top row.
+// What r3trace app's Mac window opens the page with: its traffic lights then sit in the top row.
 const TITLE_BAR = 'titlebar=hidden';
 const TITLE_BAR_PX = 28;
 const TRAFFIC_LIGHTS_PX = 70;
@@ -10081,7 +10081,7 @@ async function liveTitleBar(url) {
   let browser;
   await withPage('live', { url, sample: false }, async (page) => {
     browser = await page.evaluate(topRows);
-    const undefinedQuery = await page.evaluate(() => typeof window.r3conTitleBarControls);
+    const undefinedQuery = await page.evaluate(() => typeof window.r3traceTitleBarControls);
     const name = 'opened without it, as in a browser, the page keeps its top row as it was, and answers no window query';
     check('live', name, !(await page.evaluate(() => document.documentElement.classList.contains('titlebar'))) && undefinedQuery === 'undefined' && browser.brandLeft === GUTTER_PX, JSON.stringify(browser));
   });
@@ -10105,7 +10105,7 @@ async function liveTitleBar(url) {
 
     const answers = [];
     for (let i = 0; i < 2; i += 1) {
-      answers.push([JSON.parse(await page.evaluate(() => window.r3conTitleBarControls())), await page.evaluate(controlRects)]);
+      answers.push([JSON.parse(await page.evaluate(() => window.r3traceTitleBarControls())), await page.evaluate(controlRects)]);
       await page.click('#theme-btn');
     }
     const sameName = "in the Mac app, the page answers the window's query with its top row's controls, settings and theme, in either theme where they were";
@@ -10126,7 +10126,7 @@ async function liveTitleBar(url) {
   });
 }
 
-// The prototype sends nothing, so a saved tab's file is a web page there, which it has no r3con app to read.
+// The prototype sends nothing, so a saved tab's file is a web page there, which it has no r3trace app to read.
 async function prototypeImports() {
   const html = '<!doctype html><title>A saved tab</title><script type="application/json" id="r3con-tab">{"version":1}</script>\n';
   await withPage('saved', { sample: false }, async (page) => {
@@ -10140,14 +10140,14 @@ async function prototypeImports() {
   });
 }
 
-// The prototype runs nothing on r3con app, so it has no run to save.
+// The prototype runs nothing on r3trace app, so it has no run to save.
 async function prototypeSaves() {
   await withPage('saved', {}, async (page) => {
     check('saved', 'the prototype offers no save, even once its recorded run has landed', await page.isHidden('#save-btn'));
   });
 }
 
-// ---------- live claims: fake_server.py's claims, through r3con's claims events ----------
+// ---------- live claims: fake_server.py's claims, through r3trace's claims events ----------
 
 // fake_server.py's CLAIMS_BREAK: a question holding it has every claims call raise.
 const CLAIMS_BREAK = '(the claims break)';
@@ -10322,7 +10322,7 @@ async function live() {
   for (const body of stateful) await withFakeServer(body);
   await withFakeServer(liveKeyStates, { GEMINI_API_KEY: ENVIRONMENT_KEY });
   await withFakeServer(liveServers);
-  await withFakeServer(liveStoppedUnstarted, { R3CON_DOC_WORKERS: '0' });
+  await withFakeServer(liveStoppedUnstarted, { R3TRACE_DOC_WORKERS: '0' });
   await withFakeServer(liveSaveDialog, {}, [SAVE_DIALOG]);
   await liveElsewhere();
 }

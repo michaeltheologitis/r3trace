@@ -1,0 +1,824 @@
+"""Per-task structured logging at ``logs/<run-folder>/``.
+
+Each task-run gets **one flat, opaque, uniquely-named folder** — no ``run-dir/task-id``
+nesting. ``<run-folder>`` (:func:`new_run_folder`) is ``<UTC-timestamp>_<hex>`` and
+carries **no identity at all**: what was run, and under which config, lives *inside* it
+in ``manifest.json``. Every run is its own folder (timestamp + a random suffix never
+collide), so re-runs **accumulate** rather than overwrite; runs are grouped after the
+fact by reading each manifest (e.g. by the config's run label,
+:meth:`r3trace.config.RunConfig.label`).
+
+Layout per ``logs/<run-folder>/``:
+
+- ``manifest.json`` (:func:`write_manifest`) — the identity card + the full parameter
+  snapshot — ``r3trace_version`` and ``litellm_version``, the installed versions, the
+  task, ``n_docs``, ``context_chars`` (the documents' characters together),
+  ``run_folder``, a ``config`` block (the resolved :class:`RunConfig` — model,
+  summary_rounds, prompts, params, …), ``litellm_model`` (the model string exactly as
+  litellm was called with it, where ``config`` keeps only the bare name), ``sources``
+  (the file the config and each prompt came from), a ``settings`` block (the runtime
+  knobs), and ``created``, when it was written. Written first, so a crashed task is
+  still discoverable. The run label is **not** stored — it is recomputed from the
+  ``config`` block (:meth:`r3trace.config.RunConfig.label`). Each resume of the run
+  (:func:`r3trace.resume`) adds ``{time, r3trace_version, settings}`` to its ``resumes``.
+- ``ids.json`` — each document's id in this run, mapped to its 0-based index in
+  ``documents``. Written with the manifest.
+- ``names.json`` — each document's id mapped to its name
+  (:attr:`r3trace.pipeline.Answer.document_names`). Written with the manifest.
+- ``documents.json`` — each document's id, in document order, mapped to the SHA-256
+  of its text's UTF-8 bytes, lone surrogates passed through (:func:`fingerprints`), so
+  that the documents the run read can be told apart from any others. Written with the
+  manifest.
+- ``relevance/`` (stage 1, surfacing relevance) — ``result.json`` (``{n_rounds, n_docs,
+  pruned_after, rounds: [{round, snippets: [{id, summary, quotes, provenance,
+  skipped}]}], totals}`` — ``pruned_after`` the id of each document relevance pruned,
+  in document order, mapped to the round after which it was pruned
+  (:attr:`r3trace.stages.relevance.RelevantContext.pruned`); within
+  a round every relevance summary in document order, a document read in parts as one
+  per part, each with its id (the document's, or ``<id>.<k>`` for part ``k`` in that
+  round), its quotes, each ``{text, start, end, document_text, match, score}``: the
+  sentence the summary says it is based on, where it is in the whole document, the
+  document's own words there, and how it was found there (``exact``, ``normalized`` or
+  ``elided``, verbatim, or ``fuzzy``, only like the text, with its ``score``; all
+  ``None`` when it was not: :mod:`r3trace.quotes`), the ids of the previous round's
+  summaries it used, and ``skipped``, ``null``, or why the note was skipped, its other
+  fields then empty (:attr:`r3trace.stages.relevance.SnippetRecord.skipped`); the
+  summaries of :attr:`r3trace.stages.relevance.RelevantContext.context_round`, a skipped
+  one's place taken by an earlier round's note where one is kept
+  (:attr:`r3trace.stages.relevance.RelevantContext.note_rounds`), are the relevant
+  context that feeds downstream) + ``calls.json`` (one per ``relevance_snippet`` call,
+  tagged ``relevance-r{round}-d{doc}``, or ``relevance-r{round}-d{doc}c{part}`` for a
+  part, and ``-retry-{n}`` added to the n-th resend of a reply that did not fit its
+  schema).
+- ``structuring/schema/`` (stage 2, the schema proposal) — ``result.json``
+  (``{schema_code, thought, attempts, totals}``) + ``calls.json`` + ``transcript.yaml``;
+  with nothing to structure, a schema of no field and no call
+  (:attr:`r3trace.stages.relevance.RelevantContext.context_round`).
+- ``structuring/parsing/`` (stage 2, filling that schema per document) — ``result.json``
+  (``{parsed, source_docs, source_ids, provenance, skipped, totals}`` — for each list
+  field of ``parsed``, the 0-based index and the id of the document each record came
+  from, a part's records carrying their document's; and per document, in document
+  order, the ids of the relevance summaries its parse used, and its parts whose parse
+  was skipped, each ``{part, reason}``, ``part`` ``null`` for a document read whole,
+  none for most) + ``calls.json`` (one entry per
+  ``parse-d{doc}`` call, or ``parse-d{doc}c{part}`` for a part, ``-retry-{n}`` added to
+  a resend).
+- ``reasoning/`` (stage 3) — ``result.json`` (``{answer, provenance, path, fallback,
+  terminated_by, n_turns, turns, totals}`` — ``provenance`` is ``{relevant_trail}``,
+  the relevant trail ``{cited, rule, nodes, edges, documents, quotes}``, as
+  :attr:`r3trace.pipeline.Answer.provenance` says (:mod:`r3trace.provenance`), ``path`` is
+  ``direct`` or ``coding``, and ``fallback`` says why the coding path ran when the
+  config asked for direct, else ``null``) + ``calls.json`` + ``transcript.yaml``.
+  Its ``provenance`` has no ``claims`` and no ``evidence_trail``: they come after it.
+  r3context 0.6.45 and earlier wrote ``summary_ids`` and ``parse_ids`` at the top of
+  ``provenance``, beside whichever of ``documents``, ``quotes`` and ``trail`` they
+  gave; r3trace reads those too.
+- ``claims/`` (after reasoning, unless the config turns claims off) — ``result.json``
+  (``{claims, evidence_trail, totals}``, the answer's claims and its evidence trail
+  as :attr:`r3trace.pipeline.Answer.provenance` gives them, no claims when the call that
+  splits the answer into them is not sent, fails or is cancelled:
+  :func:`r3trace.stages.claims.find_claims`) + ``calls.json`` (``claims``, the call that
+  splits the answer into its claims, and at the sentence level ``linking-c{k}``, the
+  call that links the k-th claim, from 1, to its quotes, each with ``-retry-{n}``
+  added to a resend) + ``transcript.yaml``, the call that splits the answer, not a
+  linking call, as those finish in any order. Its ``evidence_trail`` is written for
+  those who read the folder: :func:`r3trace.trace` derives it again from the claims and
+  the relevant trail rather than read it, so a folder written without it traces the
+  same.
+- ``skipped.json`` — written when the run finishes, for reading only: every relevance
+  note and parse it skipped, as its reply stayed unusable once its resends and
+  re-rolls were spent, ``[]`` for none, each a :class:`r3trace.pipeline.Skip` as JSON,
+  in the order :attr:`r3trace.pipeline.Answer.skipped` gives them, which a resumed
+  run's include from before the resume too. r3trace reads none back: an ask builds its
+  run's skips from the stages' ``result.json``.
+- ``splits.json`` — only when a document was read in parts or splitting stopped
+  (:mod:`r3trace.splitting`): the model's window, and per document its cuts, the parts
+  each call read, and every split and stop with its cause.
+- ``events.jsonl`` — the run's progress events (:class:`EventRecorder`), one JSON
+  object per line, in the order and at the wall-clock time they happened, so the run
+  can be replayed: each stage's start and finish, each document's (or part's) in
+  relevance and parsing, the documents pruned after each round, and the run's own
+  start and its finish or failure. A resume appends its own, from its ``run_started``
+  and ``run_resumed`` on, and reads the earlier ones back for the results they report.
+- ``run.lock`` — held while a run or a resume of it writes to the folder
+  (:func:`run_lock`), so that only one does at a time.
+- ``asks/<folder>/`` — one per :func:`r3trace.ask` over the run, named as a run folder
+  is: ``manifest.json`` as above, its ``task`` the ask's question and ``ask_of`` the
+  run folder's name, ``events.jsonl`` (the ask's own events), and ``reasoning/`` and
+  ``claims/`` as above.
+
+A stage that raises writes no ``result.json``: its folder holds ``calls.json`` (every
+call that answered or raised an error, plus ``transcript.yaml`` where the stage writes
+one) and ``error.txt``, the traceback. A resume that finishes the stage keeps those
+calls in its ``calls.json``, before its own, and removes ``error.txt``.
+
+Error text is written with keys masked (:mod:`r3trace.masking`): ``calls.json``'s
+``error``, ``error.txt``, the ``error`` of ``run_failed`` and ``ask_failed`` in
+``events.jsonl``, each split's ``error`` in ``splits.json`` and the ``error`` of
+reasoning's ``fallback`` say ``REDACTED`` where a provider echoed a key, as does
+``manifest.json``'s ``config`` in place of a credential in the run's ``params``, an
+extra header say. Prompts, replies and documents are written as they are.
+
+Two layers in code:
+
+- ``TaskLogger`` writes structured artifacts under one run-folder. ``write_json("a/b",
+  data)`` writes ``<folder>/a/b.json`` and auto-creates any missing parent directories
+  — so callers spell stage paths inline (``"structuring/schema/result"``,
+  ``"reasoning/result"``).
+- ``StageRun`` accumulates per-LLM-call ``StepRecord`` instances and on ``flush()``
+  writes ``calls.json``, the full record of each call, and, unless skipped,
+  ``transcript.yaml`` (the readable message thread, its last reply with its
+  ``reasoning`` when it has one). Aggregate token and cost totals are available via
+  ``compute_totals()`` so callers fold them into the stage's ``result.json``; their
+  ``n_steps`` counts only the calls that answered.
+
+Each call in ``calls.json`` has:
+
+- ``step``, ``kind``, ``doc`` and ``chunk``, the part index of a document read in
+  parts;
+- ``tokens``, litellm's count, ``{prompt, completion, total}`` whatever the provider,
+  which the stage totals, ``run_finished`` and the app add up, and ``usage``, the
+  server's own report, as the reply's body holds it, without its ``null`` fields,
+  which carry no count (the OpenAI SDK, which reads the body for ``openai/``, adds one
+  for each field the body did not have): vLLM's
+  ``prompt_tokens_details.cached_tokens``, say, or OpenAI's
+  ``completion_tokens_details.reasoning_tokens``, each only when the server sent it.
+  The body is the provider's own, and so is its form: OpenAI-compatible servers
+  (vLLM, SGLang, OpenAI) send ``usage``, Anthropic its own ``usage``
+  (``input_tokens``, ...), Bedrock Converse a camelCase ``usage``, and Gemini
+  ``usageMetadata``, recorded in its place. ``usage`` is ``null`` when the body has
+  none, as ``ollama_chat/``'s, whose counts are at its top level
+  (``prompt_eval_count``, ``eval_count``), and when r3trace saw no body: litellm hands
+  it over (:mod:`r3trace.runtime.llm`), but not for ``ollama/``, nor for a reply it
+  serves from its cache, which was never sent, nor to a ``completion=`` that does not
+  pass r3trace's ``logger_fn`` on, nor for its ``mock_response``;
+- ``usd``, litellm's price for the call, or ``null`` when it cannot price it;
+- ``sends``, the times the request was sent, more than 1 when a temporary error made
+  r3trace resend it, and ``resend_wait_seconds``, the seconds, to hundredths, waited
+  between those sends, both ``null`` when r3trace did not resend it itself;
+- ``seconds``, the wall-clock seconds, to hundredths, from the call's first send to its
+  reply or its error, any resends and the waits before them included;
+- ``finish_reason``, and ``error``, ``null``, or, for a call that raised one, the
+  error's class and the first non-empty line of its message, keys masked;
+- ``served_model``, the ``model`` of the reply's body (Gemini's ``modelVersion``), the
+  model the server says answered, and ``fingerprint``, its ``system_fingerprint``,
+  whatever JSON the server sent, each ``null`` when the body has none (Bedrock
+  Converse's has no model) or r3trace saw no body, as for ``usage``;
+- ``prompt``, the messages sent, ``reasoning``, the reasoning text the reply carries
+  (litellm's ``reasoning_content``, from the provider's ``reasoning_content`` or
+  ``reasoning``, its thinking blocks, or a ``<think>`` block litellm moves out of the
+  content), else ``null``, and ``output``, the reply's content.
+
+A call that raised an error has ``tokens``, ``usage``, ``served_model``,
+``fingerprint``, ``finish_reason``, ``reasoning`` and ``output`` ``null`` and ``usd``
+0, as r3trace got no reply to price; its ``seconds`` are kept.
+"""
+
+from __future__ import annotations
+
+import datetime
+import hashlib
+import importlib.metadata
+import json
+import logging
+import os
+import re
+import secrets
+import tempfile
+import threading
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, cast
+
+import yaml
+from filelock import FileLock, Timeout
+from pydantic import BaseModel, StrictInt
+
+# ``normalize_model_name`` lives in ``r3trace.config`` — it's a model-identity helper
+# ``RunConfig.label()`` uses too; shared here so the transcript header below records the
+# same normalized name the run label does.
+from r3trace.config import (
+    PROMPT_STAGES,
+    PromptStage,
+    normalize_model_name,
+    resolve_config_path,
+)
+from r3trace.logging_setup import get_logger
+from r3trace.masking import masked_values
+from r3trace.prompts import resolve_prompt_path
+from r3trace.settings import active_logs_dir
+
+_log = get_logger("runs")
+
+# Pulls the source-document index (and, for a document read in parts, the part index)
+# out of a call kind so calls.json carries per-call provenance. Matches ``parse-d0``,
+# ``relevance-r2-d3`` and ``parse-d3c1``.
+_DOC_CHUNK_RE = re.compile(r"-d(\d+)(?:c(\d+))?\b")
+_EVENTS = "events.jsonl"
+_LOCK = "run.lock"
+SKIPPED = "skipped"
+"""The run folder's ``skipped.json``, by the name :meth:`TaskLogger.write_json` takes."""
+
+Emit = Callable[..., None]
+"""Reports one progress event, ``emit(event_type, **fields)``, as
+:class:`EventRecorder` does."""
+
+
+def new_run_folder() -> str:
+    """A fresh, opaque, unique log-folder name for one task-run:
+    ``<UTC-timestamp>_<hex>`` (e.g. ``20260613T142233Z_a1b2c3d4``).
+
+    Carries **no identity** — what was run, and under which config, lives inside the
+    folder in ``manifest.json``. Every call is unique (timestamp + a random suffix), so
+    runs **accumulate** rather than overwrite; grouping them is a read-the-manifests
+    job, done after the fact and never encoded in a path.
+    """
+    ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"{ts}_{secrets.token_hex(4)}"
+
+
+class TaskLogger:
+    """Writes per-stage artifacts under one flat run-folder ``logs/<folder>/``.
+
+    Callers spell stage paths inline:
+
+    - ``write_json("manifest", {...})`` → ``<folder>/manifest.json``
+    - ``write_json("structuring/schema/result", {...})`` →
+      ``<folder>/structuring/schema/result.json``
+    - ``write_yaml("reasoning/transcript", msgs)`` →
+      ``<folder>/reasoning/transcript.yaml``
+
+    ``folder`` is the unique run-folder name (see :func:`new_run_folder`); ``task_id``
+    is the caller's own name for the task, recorded in transcript headers (defaults to
+    ``folder``).
+    Parent directories are auto-created. The extension is appended from the method
+    name. ``data`` may be a Pydantic ``BaseModel`` / class, a ``dict``/``list``, or
+    any JSON-serializable value; non-serializable values fall back to ``repr``.
+    """
+
+    def __init__(
+        self, folder: str, *, task_id: str | None = None, root: Path | None = None
+    ) -> None:
+        self.folder = folder
+        self.task_id = task_id if task_id is not None else folder
+        base = root or active_logs_dir()
+        self.dir = base / folder
+        self.dir.mkdir(parents=True, exist_ok=True)
+
+    def _path(self, name: str, ext: str) -> Path:
+        path = self.dir / f"{name}.{ext}"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def write_json(self, name: str, data: Any) -> Path:
+        path = self._path(name, "json")
+        # ensure_ascii=False keeps non-ASCII (e.g. CJK) readable in the logs rather than
+        # as \uXXXX escapes; the explicit utf-8 write makes that safe on any host locale.
+        _write_whole(
+            path,
+            json.dumps(_jsonable(data), indent=2, default=repr, ensure_ascii=False),
+        )
+        return path
+
+    def write_yaml(self, name: str, data: Any) -> Path:
+        path = self._path(name, "yaml")
+        path.write_text(_dump_transcript_yaml(data), encoding="utf-8")
+        return path
+
+    def write_text(self, name: str, text: str) -> Path:
+        path = self._path(name, "txt")
+        path.write_text(text, encoding="utf-8")
+        return path
+
+
+def _write_whole(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` whole or not at all: into a file beside it, then
+    moved over it, so that a kill while it writes leaves the earlier file, which a
+    resume reads, rather than one cut short."""
+    fd, part = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as file:
+            file.write(text)
+        os.replace(part, path)
+    except BaseException:
+        Path(part).unlink(missing_ok=True)
+        raise
+
+
+def no_events(event_type: str, /, **fields: Any) -> None:
+    """An :data:`Emit` that drops every event."""
+
+
+class EventRecorder:
+    """An :data:`Emit` for one run or ask: each event is ``{"type": event_type,
+    "time": ..., **fields}``, ``time`` the wall clock in ISO 8601, written as one line
+    of JSON (a value JSON can't hold as its ``str``) to ``events.jsonl`` in
+    ``task_logger``'s folder, if there is one, and handed to ``on_event``, if there is
+    one, as that line decoded: a copy, so changing it changes nothing in the run.
+
+    Stages emit from worker threads. Each event is stamped, written and handed over
+    under one lock, so ``on_event`` is never entered twice at once and the file's lines
+    are in time order; workers wait while it runs, so it should return quickly (put the
+    event on a queue, say). Recording never fails the run: when writing the file or
+    ``on_event`` raises, the error is logged, at warning level with its traceback the
+    first time its type is raised there and at debug level after, and the run goes on.
+    """
+
+    def __init__(
+        self,
+        on_event: Callable[[dict[str, Any]], None] | None,
+        task_logger: TaskLogger | None,
+    ) -> None:
+        self._on_event = on_event
+        self._path = None if task_logger is None else task_logger.dir / _EVENTS
+        self._lock = threading.Lock()
+        self._raised: set[tuple[str, type[Exception]]] = set()
+
+    def __call__(self, event_type: str, /, **fields: Any) -> None:
+        with self._lock:
+            now = datetime.datetime.now(datetime.UTC)
+            event = {
+                "type": event_type,
+                "time": now.isoformat(timespec="milliseconds"),
+                **fields,
+            }
+            line = json.dumps(event, ensure_ascii=False, default=str)
+            if self._path is not None:
+                where = f"writing {self._path}"
+                self._guarded(where, event_type, _append_line, self._path, line)
+            if self._on_event is not None:
+                self._guarded("on_event", event_type, self._on_event, json.loads(line))
+
+    def _guarded(
+        self, what: str, event_type: str, action: Callable[..., None], *args: Any
+    ) -> None:
+        try:
+            action(*args)
+        except Exception as error:  # noqa: BLE001 — recording a paid run must not kill it
+            raised = (what, type(error))
+            _log.log(
+                logging.DEBUG if raised in self._raised else logging.WARNING,
+                "%s raised %s on a %s event; the run goes on",
+                what,
+                type(error).__name__,
+                event_type,
+                exc_info=True,
+            )
+            self._raised.add(raised)
+
+    def replay(self, event: Mapping[str, Any]) -> None:
+        """Hand ``event``, one this folder's ``events.jsonl`` already holds, to
+        ``on_event`` alone, as a copy, guarded as any other."""
+        with self._lock:
+            if self._on_event is not None:
+                copy = json.loads(json.dumps(event))
+                self._guarded("on_event", event["type"], self._on_event, copy)
+
+
+def _append_line(path: Path, line: str) -> None:
+    with path.open("a", encoding="utf-8") as lines:
+        lines.write(line + "\n")
+
+
+def read_events(folder: Path) -> tuple[list[dict[str, Any]], int]:
+    """The events ``folder``'s ``events.jsonl`` holds, in order: each of its lines that
+    is a JSON object with a ``type``; and how many of its lines are not, as one a kill
+    cut short. None for a folder without one."""
+    path = folder / _EVENTS
+    if not path.is_file():
+        return [], 0
+    events, unreadable = [], 0
+    # "\n" alone ends a line: an event's text may hold other separators, written raw.
+    for line in path.read_text(encoding="utf-8", errors="replace").split("\n"):
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            event = None
+        if isinstance(event, dict) and isinstance(event.get("type"), str):
+            events.append(event)
+        else:
+            unreadable += 1
+    return events, unreadable
+
+
+class RunFolderBusy(RuntimeError):
+    """A run or resume holds the run folder another one was to write to
+    (:func:`run_lock`)."""
+
+
+@contextmanager
+def run_lock(folder: Path) -> Iterator[None]:
+    """Hold run folder ``folder`` for one run or resume at a time while it writes there:
+    a lock on the folder's ``run.lock`` (:class:`filelock.FileLock`), taken without
+    waiting, which the OS lifts however the process ends, a kill included. Where the
+    file system can't lock, it warns and goes on without.
+
+    Raises:
+        RunFolderBusy: in one line, if another run or resume holds it.
+    """
+    try:
+        held = FileLock(folder / _LOCK, timeout=0).acquire()
+    except Timeout:
+        raise RunFolderBusy(
+            f"{folder}: a run or resume is going in it; carry it on once that one has "
+            "stopped."
+        ) from None
+    except (NotImplementedError, OSError) as error:
+        _log.warning(
+            "%s can't be locked (%s), as on a file system without locks: going on "
+            "without holding it",
+            folder,
+            type(error).__name__,
+        )
+        yield
+        return
+    with held:
+        yield
+
+
+def write_manifest(
+    task_logger: TaskLogger,
+    *,
+    task: str,
+    config: Any,
+    n_docs: int,
+    context_chars: int | None = None,
+    settings: Mapping[str, int] | None = None,
+    ask_of: str | None = None,
+) -> Path:
+    """Write ``<run-folder>/manifest.json`` — the run's identity card.
+
+    The folder name is opaque **by design**, so this file is the only thing that says
+    what the run was: the question, the resolved :class:`~r3trace.config.RunConfig`, the
+    model string litellm is called with (``litellm_model``), the runtime caps it ran
+    under (``settings``, else :func:`r3trace.settings.settings_snapshot` taken now), and
+    the package versions, r3trace's and litellm's; for an ask (:func:`r3trace.ask`),
+    ``ask_of``, the name of the run folder it answered over.
+    Written before the first stage, so even a crashed run is identifiable.
+
+    ``r3trace_version`` matters more than it looks: the prompts ship *inside* the
+    installed package, so a prompt version string like ``v1`` identifies content only
+    relative to a release. Without the version recorded here, "which prompt actually
+    ran?" is unanswerable after an upgrade.
+    """
+    from r3trace import __version__
+    from r3trace.settings import settings_snapshot
+
+    config_block = (
+        config.model_dump() if hasattr(config, "model_dump") else dict(config)
+    )
+    litellm_model = config_block.get("model")
+    if "model" in config_block:
+        config_block["model"] = normalize_model_name(config_block["model"])
+    overrides = config_block.get("overrides") or {}
+    if "model" in overrides:
+        overrides["model"] = normalize_model_name(overrides["model"])
+    # Its params may hold a credential, an extra header say, registered at run start.
+    config_block = masked_values(config_block)
+    manifest = {
+        "r3trace_version": __version__,
+        "litellm_version": importlib.metadata.version("litellm"),
+        "task": task,
+        "n_docs": n_docs,
+        "context_chars": context_chars,
+        "run_folder": task_logger.folder,
+        # --- what shapes the output (the run's identity) ---
+        "config": config_block,
+        "litellm_model": litellm_model,
+        # --- where the config and each prompt actually came from ---
+        # A user overlay (./configs, ./prompts) shadows the packaged copy, and an
+        # overlaid file is invisible in the run label — so record the winning path.
+        "sources": _sources(
+            config_block.get("name"), config_block.get("prompts") or {}
+        ),
+        # --- runtime knobs (parallelism / resilience) ---
+        "settings": dict(settings) if settings is not None else settings_snapshot(),
+        "created": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+    }
+    if ask_of is not None:
+        manifest["ask_of"] = ask_of
+    return task_logger.write_json("manifest", manifest)
+
+
+def reopen_for_resume(task_logger: TaskLogger, settings: Mapping[str, int]) -> None:
+    """Ready the run folder ``task_logger`` writes to for a resume
+    (:func:`r3trace.resume`): its ``manifest.json`` adds the resume to its ``resumes``,
+    with when it started, under which r3trace and the ``settings`` it runs under, and its
+    ``events.jsonl`` ends its last line, should a kill have cut that line short, so that
+    the resume's events start on lines of their own."""
+    from r3trace import __version__
+
+    manifest_file = task_logger.dir / "manifest.json"
+    manifest = json.loads(manifest_file.read_text(encoding="utf-8"))
+    resumed = {
+        "time": datetime.datetime.now(datetime.UTC).isoformat(timespec="seconds"),
+        "r3trace_version": __version__,
+        "settings": dict(settings),
+    }
+    manifest["resumes"] = [*manifest.get("resumes", []), resumed]
+    task_logger.write_json("manifest", manifest)
+    events = task_logger.dir / _EVENTS
+    if events.is_file() and events.stat().st_size:
+        with events.open("rb") as written:
+            written.seek(-1, os.SEEK_END)
+            cut_short = written.read(1) != b"\n"
+        if cut_short:
+            _append_line(events, "")
+
+
+def fingerprints(document_ids: Sequence[str], texts: Sequence[str]) -> dict[str, str]:
+    """What ``documents.json`` holds: the SHA-256 of each document's text, by its id, in
+    document order. The text is hashed as UTF-8 with lone surrogates passed through, as
+    a caller's text may hold half a surrogate pair, which UTF-8 can't encode."""
+    return {
+        id_: hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+        for id_, text in zip(document_ids, texts, strict=True)
+    }
+
+
+def _sources(
+    config_name: str | None, prompts: Mapping[PromptStage, str]
+) -> dict[str, Any]:
+    """Which file on disk each of the run's inputs resolved to."""
+    cfg = resolve_config_path(config_name) if config_name else None
+    return {"config": str(cfg) if cfg else None, "prompts": prompt_sources(prompts)}
+
+
+def prompt_sources(prompts: Mapping[PromptStage, str]) -> dict[str, str | None]:
+    """The file each of ``prompts``' pins resolves to now, by stage, as a manifest's
+    ``sources`` records them: ``None`` for a pin with no file."""
+    return {
+        stage: str(path)
+        if (path := resolve_prompt_path(stage, prompts[stage]))
+        else None
+        for stage in PROMPT_STAGES
+        if stage in prompts
+    }
+
+
+@dataclass
+class StepRecord:
+    """One step in a stage run — typically one LLM call (or retry, or loop turn)."""
+
+    step: int
+    kind: str  # "llm_call" | "retry" | "turn-N" | "relevance-r2-d3" | "parse-d0" | ...
+    messages: list[dict[str, Any]]
+    # {"role", "content", "finish_reason"}, and "reasoning" when the reply has some
+    response: dict[str, Any]
+    # {"prompt": int, "completion": int, "total": int}
+    tokens: dict[str, int] | None = None
+    # The provider's JSON, as it sent it.
+    usage: Any = None
+    served_model: Any = None
+    fingerprint: Any = None
+    usd: float | None = None
+    sends: int | None = None
+    resend_wait_seconds: float | None = None
+    seconds: float | None = None
+    error: str | None = None
+
+
+def call_totals(calls: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    """The count of ``calls`` that answered, leaving out those that raised an error
+    (``calls.json`` lists them), their summed ``tokens`` (``None`` when none counted
+    any), and their ``usd``: the sum of theirs, or ``None`` when litellm could not price
+    one of them. Each call has a step's ``tokens``, ``usd`` and ``error``, as a
+    :class:`StepRecord` or ``calls.json`` holds them."""
+    prompt = completion = total = n_steps = 0
+    any_tokens, costs = False, []
+    for call in calls:
+        n_steps += call["error"] is None
+        costs.append(call["usd"])
+        if (tokens := call["tokens"]) is not None:
+            any_tokens = True
+            prompt += tokens.get("prompt", 0)
+            completion += tokens.get("completion", 0)
+            total += tokens.get("total", 0)
+    return {
+        "n_steps": n_steps,
+        "tokens": {"prompt": prompt, "completion": completion, "total": total}
+        if any_tokens
+        else None,
+        "usd": None if None in costs else float(sum(cast("list[float]", costs))),
+    }
+
+
+class StageRun:
+    """Accumulates per-LLM-call records for one stage; flushes calls.json (+ transcript).
+
+    ``add_step`` records one LLM call (or one turn of a multi-turn loop), and
+    ``flush`` writes them. ``add_step`` is thread-safe, so calls fanned out across
+    documents in parallel can share one run. With ``resumed``, for a stage of a run that
+    carries on (:func:`r3trace.resume`), it starts from the calls its folder's
+    ``calls.json`` holds, if it has one, so that its next flush and its totals keep
+    them.
+    """
+
+    def __init__(
+        self,
+        *,
+        stage: str,
+        task_logger: TaskLogger,
+        model: str | None = None,
+        resumed: bool = False,
+    ) -> None:
+        self.stage = stage
+        self.task_logger = task_logger
+        self.model = model
+        self.dir = task_logger.dir / stage
+        self.dir.mkdir(parents=True, exist_ok=True)
+        self.steps: list[StepRecord] = []
+        # An earlier attempt's calls, as its calls.json holds them, written back first.
+        self._earlier = _earlier_calls(self.dir / "calls.json") if resumed else []
+        self._lock = threading.Lock()
+        # The step transcript.yaml shows, when not the last (hold_transcript).
+        self._held: StepRecord | None = None
+
+    def add_step(
+        self,
+        *,
+        kind: str = "llm_call",
+        messages: list[dict[str, Any]],
+        response: dict[str, Any],
+        tokens: dict[str, int] | None = None,
+        usage: Any = None,
+        usd: float | None = None,
+        sends: int | None = None,
+        resend_wait_seconds: float | None = None,
+        seconds: float | None = None,
+        served_model: Any = None,
+        fingerprint: Any = None,
+        error: str | None = None,
+    ) -> StepRecord:
+        """Record one step (thread-safe). Step numbers are assigned under a lock, in
+        completion order, and identify a call: a kind can repeat, as when a refused
+        turn is sent again under the same kind."""
+        with self._lock:
+            step = StepRecord(
+                step=len(self._earlier) + len(self.steps) + 1,
+                kind=kind,
+                messages=list(messages),
+                response=dict(response),
+                tokens=tokens,
+                usage=usage,
+                usd=usd,
+                sends=sends,
+                resend_wait_seconds=resend_wait_seconds,
+                seconds=seconds,
+                served_model=served_model,
+                fingerprint=fingerprint,
+                error=error,
+            )
+            self.steps.append(step)
+        return step
+
+    def hold_transcript(self) -> None:
+        """Make ``transcript.yaml`` show the call recorded last so far, whatever calls
+        are recorded after it, as when they run in parallel and finish in any order."""
+        with self._lock:
+            self._held = self.steps[-1] if self.steps else None
+
+    def flush(self, *, write_transcript: bool = True) -> Path:
+        """Write ``calls.json`` (always) and, unless ``write_transcript=False``,
+        ``transcript.yaml``; return the path of the primary file written.
+
+        ``write_transcript=False`` is used by stages whose many parallel
+        independent calls (surfacing relevance, parsing) make a flattened transcript
+        confusing — their ``calls.json`` is the readable source.
+        """
+        calls_path = self._write_calls()
+        if not write_transcript:
+            return calls_path
+        transcript = {
+            "stage": self.stage,
+            "task_id": self.task_logger.task_id,
+            "model": normalize_model_name(self.model),
+            "messages": self._build_transcript_messages(),
+        }
+        transcript_path = self.dir / "transcript.yaml"
+        transcript_path.write_text(_dump_transcript_yaml(transcript), encoding="utf-8")
+        return transcript_path
+
+    def _write_calls(self) -> Path:
+        """Write ``calls.json`` — one entry per LLM call, with the fields the module
+        docstring defines. ``doc``/``chunk`` are read out of the call ``kind`` (e.g.
+        ``parse-d0``, ``relevance-r1-d2``) when present."""
+        calls: list[dict[str, Any]] = list(self._earlier)
+        for s in self.steps:
+            m = _DOC_CHUNK_RE.search(s.kind)
+            resp = s.response if isinstance(s.response, dict) else {}
+            calls.append(
+                {
+                    "step": s.step,
+                    "kind": s.kind,
+                    "doc": int(m.group(1)) if m else None,
+                    "chunk": int(m.group(2)) if (m and m.group(2)) else None,
+                    "tokens": s.tokens,
+                    "usage": s.usage,
+                    "usd": s.usd,
+                    "sends": s.sends,
+                    "resend_wait_seconds": s.resend_wait_seconds,
+                    "seconds": s.seconds,
+                    "finish_reason": resp.get("finish_reason"),
+                    "error": s.error,
+                    "served_model": s.served_model,
+                    "fingerprint": s.fingerprint,
+                    "prompt": s.messages,
+                    "reasoning": resp.get("reasoning"),
+                    "output": resp.get("content"),
+                }
+            )
+        path = self.dir / "calls.json"
+        _write_whole(path, json.dumps(calls, indent=2, default=str, ensure_ascii=False))
+        return path
+
+    def compute_totals(self) -> dict[str, Any]:
+        """The stage's :func:`call_totals`, an earlier attempt's calls counted in, for
+        its ``result.json``."""
+        return call_totals([*self._earlier, *map(vars, self.steps)])
+
+    def _build_transcript_messages(self) -> list[dict[str, Any]]:
+        """The readable conversation = the final step's full message thread + its
+        reply, if it got one, or the held step's (:meth:`hold_transcript`). For a
+        multi-turn loop (codeact) the last step's ``messages`` already contain the
+        whole grown conversation; for a retry loop (the schema proposal) they are the
+        final attempt — earlier attempts live in ``calls.json``. A stage that ended on a call that raised shows the thread that
+        call sent, with no reply. Empty run → ``[]``. (Stages with many parallel calls
+        flush with ``write_transcript=False`` and never reach here.)"""
+        if not self.steps:
+            return []
+        last = self._held or self.steps[-1]
+        thread = list(last.messages)
+        if last.response.get("content"):
+            thread.append(last.response)
+        return thread
+
+
+class _Call(BaseModel):
+    """What a resumed stage reads of each of an earlier attempt's calls."""
+
+    tokens: dict[str, StrictInt] | None
+    usd: float | None
+    error: str | None
+
+
+def _earlier_calls(path: Path) -> list[dict[str, Any]]:
+    """The calls an earlier attempt at the stage recorded in ``path``, its
+    ``calls.json``, as it holds them: none when there is none, or when it can't be
+    read, as when a kill cut its writing short."""
+    if not path.is_file():
+        return []
+    try:
+        calls = json.loads(path.read_text(encoding="utf-8"))
+        for call in calls:
+            _Call.model_validate(call)
+    except (TypeError, ValueError):
+        _log.warning("%s can't be read; its calls are left out of the totals", path)
+        return []
+    return calls
+
+
+def _str_representer(dumper: yaml.SafeDumper, data: str) -> yaml.ScalarNode:
+    """Render strings with newlines as literal ``|`` block scalars (readable
+    transcripts); rstrip each line so trailing whitespace doesn't force PyYAML's
+    escaped single-line fallback."""
+    if "\n" in data:
+        cleaned = "\n".join(line.rstrip() for line in data.split("\n"))
+        return dumper.represent_scalar("tag:yaml.org,2002:str", cleaned, style="|")
+    return dumper.represent_scalar("tag:yaml.org,2002:str", data)
+
+
+class _BlockDumper(yaml.SafeDumper):
+    """Local SafeDumper subclass so the literal-block representer stays local."""
+
+
+_BlockDumper.add_representer(str, _str_representer)
+
+
+def _dump_transcript_yaml(payload: Any) -> str:
+    return yaml.dump(
+        _jsonable(payload),
+        Dumper=_BlockDumper,
+        sort_keys=False,
+        default_flow_style=False,
+        allow_unicode=True,
+        width=10000,
+    )
+
+
+def _jsonable(data: Any) -> Any:
+    """Coerce Pydantic instances → ``model_dump``, classes → JSON schema; recurse
+    lists/dicts; leave everything else for ``json.dumps`` (``default=repr`` net)."""
+    if isinstance(data, BaseModel):
+        return data.model_dump(mode="json")
+    if isinstance(data, type) and issubclass(data, BaseModel):
+        return data.model_json_schema()
+    if isinstance(data, dict):
+        return {k: _jsonable(v) for k, v in data.items()}
+    if isinstance(data, (list, tuple)):
+        return [_jsonable(v) for v in data]
+    return data

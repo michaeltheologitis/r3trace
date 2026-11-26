@@ -13,16 +13,16 @@ claims call is shown, or at the sentence level its linking call, and its second 
 A document holding ``FADES`` gets no summary from its ``FADES_FROM_READ``-th read on,
 its reads counted from the server's start, so that a check reading it whole once a
 round, with text of its own, has its note go empty in that round. It refuses a document
-over ``PART_CHARS`` as too long, so that r3con reads it in parts, judging a resend by
+over ``PART_CHARS`` as too long, so that r3trace reads it in parts, judging a resend by
 the part it sends again.
 A question holding ``FAILS`` makes every call raise, and one holding ``HANGS`` makes
 every call wait until the server is killed. One holding ``STALLS`` makes every call
 wait until ``check.mjs`` writes ``RELEASE`` into LOGS_DIR, one holding a marker of
 ``BROKEN_STAGES`` makes every call of its stage raise until then, and one holding
-``OFF_SCHEMA`` makes every reply with a schema miss it, so r3con sends again.
+``OFF_SCHEMA`` makes every reply with a schema miss it, so r3trace sends again.
 A document holding ``RUNS_OUT`` has every relevance reply after round 1's cut off at
 the output limit, and one holding ``MISFITS`` every parse reply miss its schema, so
-that r3con skips that note or parse; neither marker may be a document's first line,
+that r3trace skips that note or parse; neither marker may be a document's first line,
 which other calls are shown as its note.
 The server keeps the keys it is given in a credential store of its own, in memory,
 never the system's. With ``--save-dialog`` after LOGS_DIR, it saves a tab as the Mac
@@ -49,8 +49,8 @@ import keyring
 import litellm
 from litellm.exceptions import ContextWindowExceededError
 
-from r3con.app import serve
-from r3con.app.server import SAVE_DIALOG
+from r3trace.app import serve
+from r3trace.app.server import SAVE_DIALOG
 from tests.fakes import (
     PARSE_HEADING,
     SCHEMA_REPLY,
@@ -84,7 +84,7 @@ EMPTY_REPLY = "{}"
 RUNS_OUT = "(its note runs out after round 1)"
 CUT_OFF_REPLY = '{"summary": "This note runs on and on and'
 MISFITS = "(its parse never fits)"
-# Where r3con's resend of a part adds the error its reply had, below the part.
+# Where r3trace's resend of a part adds the error its reply had, below the part.
 RESENT = "\n\n---\n\nYour previous response failed schema validation:"
 QUIET = "(nothing relevant here)"
 UNPARSED = "(nothing to parse here)"

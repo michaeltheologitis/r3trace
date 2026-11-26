@@ -1,6 +1,6 @@
 # evals
 
-A small regression check for r3con, not the paper's evaluation: it runs `r3con.run` with
+A small regression check for r3trace, not the paper's evaluation: it runs `r3trace.run` with
 the default config, claims off, on 75 pinned tasks, judges each answer, and writes one
 line of scores to [`results.jsonl`](results.jsonl), so the numbers can be compared commit
 to commit.
@@ -18,15 +18,15 @@ adapters are ported from [r3con-evaluation](https://github.com/michaeltheologiti
 ## Cost and time
 
 About **$3 a run** on Luna (the first full run, on 2026-10-28, cost $2.99): the sample
-holds 7.3M document tokens, r3con sends about 3.2 times that as input, and output and
+holds 7.3M document tokens, r3trace sends about 3.2 times that as input, and output and
 judging are small. The cost is litellm's price
-for each call r3con and the judge made, as recorded in their `calls.json`, cached input
-included, but not the asks over a task's r3con run (its `asks/`); it is `null` when
+for each call r3trace and the judge made, as recorded in their `calls.json`, cached input
+included, but not the asks over a task's r3trace run (its `asks/`); it is `null` when
 litellm could not price a call.
 
 A task takes one to two minutes, and a run does 32 at a time by default (`--workers`),
 each fanning out over its own documents; the first full run took about three minutes.
-Rate-limited calls are resent with backoff by r3con itself.
+Rate-limited calls are resent with backoff by r3trace itself.
 
 ## Running it
 
@@ -42,8 +42,8 @@ uv run python -m evals --ask-over evals/runs/<folder> --model <model>   # see be
 
 The first run downloads the data (about 150 MB) into `evals/.cache/` and checks each file's
 SHA-256. Each run writes to `evals/runs/<UTC time>_<hex>/`: `run.json` (the commit and run
-label it started with), then per task `<benchmark>/<task id>/` with `answer.json` (r3con's
-answer, or its error), r3con's run folder, the judge's `judge/calls.json`, and
+label it started with), then per task `<benchmark>/<task id>/` with `answer.json` (r3trace's
+answer, or its error), r3trace's run folder, the judge's `judge/calls.json`, and
 `record.json` (the score, the judge's rationale, tokens and cost). Both folders are
 git-ignored.
 
@@ -51,11 +51,11 @@ A manual CI run with `eval` on runs it on GitHub's runner: the job summary shows
 and the `eval-run` artifact (kept 90 days) holds the run folder and `results.jsonl` with
 that line added.
 
-A task is left without a record when its r3con run raises an error r3con resends (a
+A task is left without a record when its r3trace run raises an error r3trace resends (a
 failed connection, a server error, a timeout or a rate limit) once its resends are
 spent, a refused key, access or quota, or a model the provider does not know, and when
 loading the task or judging its answer raises: the run logs it, exits non-zero and writes no line, and `--resume`
-retries it, judging a saved answer again rather than running r3con twice. Every other
+retries it, judging a saved answer again rather than running r3trace twice. Every other
 error is recorded with the task and scored worst (Loong 1, CorpusQA 0); to retry a
 recorded task, delete its folder and resume.
 
@@ -72,7 +72,7 @@ starts and stops at a line that is not JSON, so a broken file never costs a paid
 ## Comparing answering models
 
 `--ask-over` answers a finished run's tasks again with another model, over the same
-representations: per task, `r3con.ask` reruns only reasoning over the task's r3con run
+representations: per task, `r3trace.ask` reruns only reasoning over the task's r3trace run
 folder, with the run's question, and the answer is judged as in a run.
 
 ```bash
@@ -81,16 +81,16 @@ uv run python -m evals --ask-over evals/runs/<folder> --model anthropic/claude-s
 
 It writes to `<folder>/asks/<model>-<hash>/` (`/` and other punctuation in the model as
 `-`, then a hash of the exact model string), laid out as a run folder; each
-`answer.json` names, relative to `<folder>`, the task's r3con run (`run_dir`) and where
-r3con wrote the ask (`ask_dir`, in that run's `asks/`). A model whose provider litellm
+`answer.json` names, relative to `<folder>`, the task's r3trace run (`run_dir`) and where
+r3trace wrote the ask (`ask_dir`, in that run's `asks/`). A model whose provider litellm
 does not know stops the comparison before any call. Errors are kept as in a run, and a
-task whose r3con run never finished parsing cannot be asked, so it is recorded with that
+task whose r3trace run never finished parsing cannot be asked, so it is recorded with that
 error. Every task asked over needs a record in the run. Running the command again
 finishes the comparison; it resumes only from the commit it started with and a clean
 tree, and to start it over, delete its folder. `--limit` and `--workers` work as for a
 run.
 
-Redoing a task of the run (`--resume` after deleting its answer) rebuilds its r3con run,
+Redoing a task of the run (`--resume` after deleting its answer) rebuilds its r3trace run,
 so the comparisons over it are stale and must be redone. An ask that raises a temporary
 error and is retried leaves its partial ask folder, whose calls the comparison's `usd`
 does not count.
@@ -108,7 +108,7 @@ One JSON object per full run, and one per full comparison:
 | Field | Meaning |
 | --- | --- |
 | `date`, `commit`, `dirty` | When the run or comparison started (UTC), its commit, and whether tracked files under `src/` or `evals/` (other than `results.jsonl`) had uncommitted changes |
-| `r3con_version`, `label` | The package version, and the run label: the config name, model, summary rounds, reasoning path, evidence level when `document`, generation params when set, and the version of every prompt it reads. A comparison has no `label` |
+| `r3trace_version`, `label` | The package version (`r3con_version` in lines before 0.6.51), and the run label: the config name, model, summary rounds, reasoning path, evidence level when `document`, generation params when set, and the version of every prompt it reads. A comparison has no `label` |
 | `ask_of`, `answer_model` | A comparison's only: the run it asked over (its `run` folder, `commit`, `dirty` and `label`), and the model that answered |
 | `judge_model` | The judge |
 | `benchmarks.loong` | `n`, `errors`, `avg_score` (1–100), `perfect_rate` (0–1) |

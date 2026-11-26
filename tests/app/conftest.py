@@ -4,14 +4,14 @@ from types import ModuleType
 
 import pytest
 
-from r3con.app.server import KEY_VARIABLES
+from r3trace.app.server import KEY_VARIABLES
 from tests.fakes import FakeNSPoint, FakeObjC, FakeObjCProperty, fake_ns_make_rect
 
 
 # In place of the root's: no fake model or recorded resend waits, as the server's
 # tests need the real ones.
 @pytest.fixture(autouse=True)
-def _isolated(monkeypatch: pytest.MonkeyPatch, isolated_r3con: None) -> None:
+def _isolated(monkeypatch: pytest.MonkeyPatch, isolated_r3trace: None) -> None:
     for variable in KEY_VARIABLES.values():
         monkeypatch.delenv(variable, raising=False)
 

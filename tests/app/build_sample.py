@@ -4,30 +4,30 @@
 they differ.
 
 The run folder, ``tests/app/sample/20261105T173546Z_bb4f0c37/``, is a real run, copied
-unedited from the ``logs/`` r3con wrote it to:
+unedited from the ``logs/`` r3trace wrote it to, as r3con, its name before 0.6.51:
 
-- The run: ``r3con run QUESTION examples/memos`` with r3con 0.6.4 (main at 20964ea), its
+- The run: ``r3trace run QUESTION examples/memos`` with r3trace 0.6.4 (main at 20964ea), its
   default config and no overrides: model ``openai/gpt-6-luna``, two summary rounds,
   direct reasoning, empty ``params``, and that config's prompt pins (relevance v2 and
   v3, schema v1, parsing v3, direct v3). QUESTION: "Which maintenance contractor's sites
   logged the most equipment incidents in Q3 in total, and how many?"
-- Its ``asks/``: ``r3con.ask(run_folder, question, model=model)``, in this order: "Which
+- Its ``asks/``: ``r3trace.ask(run_folder, question, model=model)``, in this order: "Which
   sites does Halloran Services maintain?" on ``openai/gpt-6-luna``, the same on
   ``openai/gpt-6.1-terra``, then "How many incidents did Merrow Facilities Group's sites
   log?" on ``openai/gpt-6-luna``. They predate claims, so they have none.
 - Its ``claims/``, and the ``claims_started`` and ``claims_finished`` at the end of its
   ``events.jsonl``: the run predates claims, so they were added later, on 2026-11-17,
-  by one real call: r3con's claims stage (``pipeline._claims_stage``, with r3con at
+  by one real call: r3trace's claims stage (``pipeline._claims_stage``, with r3trace at
   1b3ff45) run once on the run's saved answer, on the run's own model at the sentence
-  level with claims prompt v1, over its provenance as ``r3con.trace`` builds it, each
+  level with claims prompt v1, over its provenance as ``r3trace.trace`` builds it, each
   quote's ``document_text`` its memo's words. The stage wrote them as a run does; the
   run's own ``run_finished``, before them, leaves out their cost.
 
 Building calls no model: each document's name, text and size come from
-``examples/memos``, each answer's provenance is ``r3con.trace``'s for its folder, each
+``examples/memos``, each answer's provenance is ``r3trace.trace``'s for its folder, each
 quote's ``document_text``, which the run predates, its memo's words from ``start`` to
 ``end``, and every other value is read from the folder as it is. Each quote names the
-summary it is from, so the app can match it to the trail. A note or parse r3con
+summary it is from, so the app can match it to the trail. A note or parse r3trace
 skipped, which this run predates, says so as the app's live run has it, and a call's
 resends count in its node. Every document in this run was read whole, and this handles
 only that. A sample with a document read in parts would need part handling: joining its
@@ -35,7 +35,7 @@ parts' summaries as the app does, counting its ``<id>.<k>`` summaries as the doc
 and fitting its several calls into the page's one call per node.
 
 To record a new sample, run and ask as above, put the new run folder where this one is,
-keeping its name (``r3con.trace`` finds an ask's run by it), set ``RUN_FOLDER``, and run
+keeping its name (``r3trace.trace`` finds an ask's run by it), set ``RUN_FOLDER``, and run
 this.
 """
 
@@ -50,15 +50,15 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-import r3con
-from r3con.provenance import AnswerProvenance, with_claims
+import r3trace
+from r3trace.provenance import AnswerProvenance, with_claims
 
 REPO = Path(__file__).resolve().parents[2]
 RUN_FOLDER = Path(__file__).resolve().parent / "sample" / "20261105T173546Z_bb4f0c37"
 MEMOS = REPO / "examples" / "memos"
-APP_JS = REPO / "src" / "r3con" / "app" / "app.js"
+APP_JS = REPO / "src" / "r3trace" / "app" / "app.js"
 
-# check.mjs reads the sample as a run of r3con's default two rounds.
+# check.mjs reads the sample as a run of r3trace's default two rounds.
 SAMPLE_ROUNDS = 2
 # What the page reads of each quote: its text, and where it is in its document, in code points.
 QUOTE_FIELDS = ("text", "start", "end")
@@ -80,13 +80,13 @@ def memo_texts(run: Path, memos: Path) -> dict[str, str]:
 def provenance(
     folder: Path, saved: dict[str, Any], texts: dict[str, str]
 ) -> AnswerProvenance:
-    """The provenance of the answer saved in ``folder``, as r3con.trace gives it, each
+    """The provenance of the answer saved in ``folder``, as r3trace.trace gives it, each
     quote's document_text read from its document's text in ``texts``, and its evidence
-    trail made of those quotes (:func:`r3con.provenance.with_claims`). The recorded run
+    trail made of those quotes (:func:`r3trace.provenance.with_claims`). The recorded run
     predates document_text, which trace then gives as None. A run before 0.6.5, as the
-    recorded one, saved only the answer's citations, which trace gives; one this r3con
+    recorded one, saved only the answer's citations, which trace gives; one this r3trace
     makes saves its whole relevant trail, which trace gives too."""
-    traced = r3con.trace(folder)
+    traced = r3trace.trace(folder)
     relevant = traced["relevant_trail"]
     saved_trail = saved.get("relevant_trail")
     same = (
@@ -202,7 +202,6 @@ def build_sample(run: Path, memos: Path) -> dict[str, Any]:
     return {
         "question": manifest["task"],
         "model": manifest["config"]["model"],
-        "version": manifest["r3con_version"],
         "runFolder": manifest["run_folder"],
         "created": manifest["created"],
         "docs": docs,

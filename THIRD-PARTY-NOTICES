@@ -1,10 +1,10 @@
-Third-party notices for R3Con (distributed on PyPI as r3context)
+Third-party notices for R3Trace (distributed on PyPI as r3trace)
 
-R3Con is licensed under the MIT License (see LICENSE). It includes one file from
+R3Trace is licensed under the MIT License (see LICENSE). It includes one file from
 another project, under that project's licence.
 
 --------------------------------------------------------------------------------
-src/r3con/runtime/python_executor.py
+src/r3trace/runtime/python_executor.py
 --------------------------------------------------------------------------------
 
 A modified copy of `local_python_executor.py` from smolagents v1.25.0,

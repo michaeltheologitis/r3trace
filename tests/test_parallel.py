@@ -2,7 +2,7 @@ import time
 
 import pytest
 
-from r3con.parallel import parallel_map
+from r3trace.parallel import parallel_map
 
 CALL_SECONDS = 0.01
 

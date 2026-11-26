@@ -43,8 +43,8 @@ jobs:
         run: |
           version="$(uv version --short)"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          if curl -fsS -o /dev/null "https://pypi.org/pypi/r3context/$version/json"; then
-            echo "::error::r3context $version is already on PyPI; bump the version first."
+          if curl -fsS -o /dev/null "https://pypi.org/pypi/r3trace/$version/json"; then
+            echo "::error::r3trace $version is already on PyPI; bump the version first."
             exit 1
           fi
           if [ "$GITHUB_REF_TYPE" = tag ]; then
@@ -118,7 +118,7 @@ jobs:
     timeout-minutes: 10
     environment:
       name: pypi
-      url: https://pypi.org/project/r3context/${{ needs.build.outputs.version }}/
+      url: https://pypi.org/project/r3trace/${{ needs.build.outputs.version }}/
     permissions:
       id-token: write
     steps:
@@ -140,10 +140,10 @@ jobs:
         with:
           name: dist
           path: dist/
-      # R3Con.dmg and the update feed that pyproject.toml's SUFeedURL reads.
+      # R3Trace.dmg and the update feed that pyproject.toml's SUFeedURL reads.
       - uses: actions/download-artifact@v8
         with:
-          name: r3con-mac-app-signed
+          name: r3trace-mac-app-signed
           path: dist/
       - name: Create the GitHub Release
         env:
@@ -152,7 +152,7 @@ jobs:
           NOTES: ${{ needs.build.outputs.notes }}
         run: |
           if [ "$GITHUB_REF_TYPE" = tag ]; then
-            gh release create "$GITHUB_REF_NAME" dist/* --title "r3context $VERSION" --notes "$NOTES" --verify-tag
+            gh release create "$GITHUB_REF_NAME" dist/* --title "r3trace $VERSION" --notes "$NOTES" --verify-tag
           else
-            gh release create "v$VERSION" dist/* --title "r3context $VERSION" --notes "$NOTES" --target "$GITHUB_SHA"
+            gh release create "v$VERSION" dist/* --title "r3trace $VERSION" --notes "$NOTES" --target "$GITHUB_SHA"
           fi

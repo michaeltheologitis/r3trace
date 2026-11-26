@@ -2554,8 +2554,8 @@ wheels = [
 ]
 
 [[package]]
-name = "r3context"
-version = "0.6.50"
+name = "r3trace"
+version = "0.6.51"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -2593,7 +2593,7 @@ dev = [
     { name = "pytest-cov" },
     { name = "pytest-httpserver" },
     { name = "pytest-socket" },
-    { name = "r3context", extra = ["app"] },
+    { name = "r3trace", extra = ["app"] },
     { name = "ruff" },
     { name = "toga-core" },
 ]
@@ -2635,7 +2635,7 @@ dev = [
     { name = "pytest-cov", specifier = ">=7.0" },
     { name = "pytest-httpserver", specifier = ">=1.1" },
     { name = "pytest-socket", specifier = ">=0.8" },
-    { name = "r3context", extras = ["app"] },
+    { name = "r3trace", extras = ["app"] },
     { name = "ruff", specifier = ">=0.16" },
     { name = "toga-core", specifier = ">=0.5.7,<0.6" },
 ]

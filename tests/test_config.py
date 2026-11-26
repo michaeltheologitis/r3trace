@@ -3,8 +3,8 @@ import re
 import pytest
 from pydantic import ValidationError
 
-from r3con import settings
-from r3con.config import PROMPT_STAGES, RunConfig, available_configs, load_config
+from r3trace import settings
+from r3trace.config import PROMPT_STAGES, RunConfig, available_configs, load_config
 
 PROMPTS = dict.fromkeys(PROMPT_STAGES, "v1")
 CODING = "reasoning/coding"
@@ -315,7 +315,7 @@ def test_bad_prompts_in_a_config_are_refused_in_one_line(configs, prompts, refus
     assert str(refused.value) == f"config 'old': {refusal}."
 
 
-def test_a_run_config_refuses_a_stage_r3con_does_not_have():
+def test_a_run_config_refuses_a_stage_r3trace_does_not_have():
     with pytest.raises(ValidationError, match=re.escape(THE_STAGES)):
         RunConfig(model="openai/m", prompts={**PROMPTS, "relevance": "v1"})
 
@@ -397,7 +397,7 @@ def test_a_setting_left_empty_in_a_config_file_takes_its_default(configs):
     assert (config.reasoning, config.params) == ("direct", {})
 
 
-def test_a_run_config_refuses_a_reasoning_path_r3con_does_not_have():
+def test_a_run_config_refuses_a_reasoning_path_r3trace_does_not_have():
     with pytest.raises(ValidationError, match="Input should be 'direct' or 'coding'"):
         RunConfig(model="openai/m", prompts=PROMPTS, reasoning="agent")
 
@@ -413,7 +413,7 @@ def test_a_misspelt_override_is_refused(name, value):
     [
         (
             {"seed": 42},
-            r"\['seed'\].*`seed` was removed in r3con 0\.2\.0.*params: \{seed: 42\}",
+            r"\['seed'\].*`seed` was removed in r3trace 0\.2\.0.*params: \{seed: 42\}",
         ),
         ({"sumary_rounds": 3}, r"does not read: \['sumary_rounds'\]"),
         ({"overrides": {"model": "x"}}, r"does not read: \['overrides'\]"),
@@ -421,7 +421,7 @@ def test_a_misspelt_override_is_refused(name, value):
     ],
     ids=["seed", "misspelt", "overrides", "name"],
 )
-def test_a_config_field_r3con_does_not_read_is_refused(configs, field, message):
+def test_a_config_field_r3trace_does_not_read_is_refused(configs, field, message):
     configs(old={**FULL, **field})
     with pytest.raises(ValueError, match=message):
         load_config("old")

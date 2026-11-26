@@ -1,4 +1,4 @@
-"""A small regression check of r3con on Loong and CorpusQA: ``uv run python -m evals``.
+"""A small regression check of r3trace on Loong and CorpusQA: ``uv run python -m evals``.
 
 See ``evals/README.md``. Lives outside ``src/`` so it never ships in the wheel.
 """
@@ -15,9 +15,9 @@ from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel
 
-from r3con.logging_setup import get_logger
-from r3con.runs import StageRun
-from r3con.runtime.llm import litellm_chat_completion
+from r3trace.logging_setup import get_logger
+from r3trace.runs import StageRun
+from r3trace.runtime.llm import litellm_chat_completion
 
 JUDGE_MODEL = "openai/gpt-6-luna"
 CACHE_DIR = Path(__file__).resolve().parent / ".cache"
