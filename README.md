@@ -5,10 +5,11 @@
 ![Python](https://img.shields.io/badge/python-%3E%3D3.11-blue)
 [![License](https://img.shields.io/badge/license-MIT-green)](https://github.com/michaeltheologitis/r3trace/blob/main/LICENSE)
 
-**Context representation for large-scale reasoning with smaller, cheaper models.**
+**Inspectable long-context reasoning with evidence attribution.**
 
-Ask a question whose evidence is spread across many documents. R3Trace finds and
-organizes the relevant information, then reasons over it to produce an answer.
+Ask a question across a collection of documents. R3Trace finds and organizes the relevant
+information, reasons over it to answer your question, and lets you trace the answer back to
+the original sources to see how it got there.
 
 ![R3Trace's Mac app, in real time: a folder holding a spreadsheet, three PDFs and a Word file is dropped on the panel and shows as a file tree, then a loose inspection schedule is dropped beside it; a run asks which site logged the most equipment incidents, who maintains it and when its next inspection is, and the answer lights its trail through the tree; once its sentences are linked to their evidence, hovering each sentence draws its own path in blue over the lit trail, clicking the second lists its three quotes from three documents, and a quote opens the Riverside PDF with it marked](https://raw.githubusercontent.com/michaeltheologitis/r3trace/main/docs/demo.gif)
 
