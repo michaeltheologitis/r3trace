@@ -107,6 +107,14 @@ FOLLOW_UP_RULE_3 = (
     '"cannot be determined". When they don\'t, say so as above.'
 )
 RUN_RULE_3 = "3. **Avoid empty answers.**"
+NEW_RUN_ADVICE = 'your advice to the user is to "start a new run for this question".'
+FOLLOW_UP_SECTION = "## These views were built for another question"
+FOLLOW_UP_FOUND_NOTHING_RULE_3 = (
+    "3. **Don't make up an answer.** Nothing relevant to the earlier question was "
+    "found, so the current information doesn't cover this task: say so as above "
+    "rather than guess."
+)
+RUN_FOUND_NOTHING = "the documents hold nothing relevant to the task"
 ASK_FILES = {
     "manifest.json",
     "events.jsonl",
@@ -579,6 +587,7 @@ def test_an_ask_of_another_question_is_told_the_question_its_views_were_built_fo
     ran, asked = answering_llm.requests_for("reasoning")
     system, user = (message["content"] for message in asked["messages"])
     assert EARLIER_QUESTION in system
+    assert NEW_RUN_ADVICE in system
     assert FOLLOW_UP_RULE_3 in system
     assert RUN_RULE_3 not in system
     assert all(f"Notes on {doc}." in system for doc in DOCS)
@@ -598,6 +607,69 @@ def test_an_ask_of_the_runs_own_question_sends_the_runs_reasoning_prompt(
     system = ran["messages"][0]["content"]
     assert "<earlier_question>" not in system
     assert RUN_RULE_3 in system
+
+
+def test_a_follow_up_without_a_parse_names_only_the_summaries_as_built_for_the_run(
+    answering_llm, tmp_path, sections
+):
+    answering_llm.answers(
+        relevance=silent_when(is_later_round),
+        reasoning=citing("Halloran memo", slice(1)),
+    )
+    result = finished_run(answering_llm, tmp_path)
+    ask(result.run_dir, "Which memo came first?", completion=answering_llm)
+    _, asked = answering_llm.requests_for("reasoning")
+    shown = sections(asked["messages"][0]["content"])
+    assert list(shown) == [
+        "## The task and your view",
+        FOLLOW_UP_SECTION,
+        "## Document summaries",
+        "## Rules",
+        "## Output",
+    ]
+    assert (
+        "**summaries written for the earlier question**"
+        in shown["## The task and your view"]
+    )
+    assert EARLIER_QUESTION in shown[FOLLOW_UP_SECTION]
+    assert "and the parse" not in shown[FOLLOW_UP_SECTION]
+    assert "contributes toward the earlier question" in shown["## Document summaries"]
+    assert FOLLOW_UP_RULE_3 in shown["## Rules"]
+
+
+def test_a_follow_up_over_an_empty_run_is_told_the_earlier_question_found_nothing(
+    answering_llm, tmp_path, sections
+):
+    answering_llm.answers(
+        relevance=silent_when(lambda request: True),
+        reasoning=citing("No memo says."),
+    )
+    result = finished_run(answering_llm, tmp_path)
+    ask(result.run_dir, "Which memo came first?", completion=answering_llm)
+    ran, asked = (
+        request["messages"][0]["content"]
+        for request in answering_llm.requests_for("reasoning")
+    )
+    assert RUN_FOUND_NOTHING in ran
+    assert RUN_FOUND_NOTHING not in asked
+    shown = sections(asked)
+    assert list(shown) == [
+        "## The task",
+        FOLLOW_UP_SECTION,
+        "## Document summaries",
+        "## Rules",
+        "## Output",
+    ]
+    assert (
+        "nothing relevant to the earlier question below was found"
+        in shown["## The task"]
+    )
+    assert "doesn't cover this task" in shown["## The task"]
+    assert EARLIER_QUESTION in shown[FOLLOW_UP_SECTION]
+    assert (
+        "contributes anything to the earlier question" in shown["## Document summaries"]
+    )
+    assert FOLLOW_UP_FOUND_NOTHING_RULE_3 in shown["## Rules"]
 
 
 def test_each_ask_writes_a_folder_of_its_own_and_leaves_the_runs_files_as_they_were(

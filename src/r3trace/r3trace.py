@@ -280,10 +280,10 @@ def ask(
     so an ask costs one reasoning step rather than a run. Reasoning is sent what the
     run's was, with ``question`` in place of the run's question and, when the two
     differ, the run's question as the one its summaries and parse were built for, so
-    that an answer they don't cover says so and advises a fresh run. Its prompts are the
-    run's pins, resolved as a run resolves them (a ``./prompts`` overlay in the working
-    directory included), and the ask's manifest records the files it used. It falls
-    back to the coding path as a run's does.
+    that an answer they don't cover says so and advises starting a new run for this
+    question. Its prompts are the run's pins, resolved as a run resolves them (a
+    ``./prompts`` overlay in the working directory included), and the ask's manifest
+    records the files it used. It falls back to the coding path as a run's does.
 
     Args:
         source: an :class:`Answer` from :func:`run` or :func:`ask`, whose ``run_dir``

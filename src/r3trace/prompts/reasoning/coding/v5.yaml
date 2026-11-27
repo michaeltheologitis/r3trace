@@ -13,7 +13,7 @@ instructions: |-
   {{ built_for }}
   </earlier_question>
 
-  They hold what that question needed and may leave out what it didn't. This task is a follow-up asked over them. When they cover it, answer from them as usual. When they don't, because the task asks about something the earlier question didn't need, you can simply say that the current information don't cover this question, and that your advice to the user is to run again a fresh run!
+  They hold what that question needed and may leave out what it didn't. This task is a follow-up asked over them. When they cover it, answer from them as usual. When they don't, because the task asks about something the earlier question didn't need, you can simply say that the current information don't cover this question, and that your advice to the user is to "start a new run for this question".
 
   {% endif %}## Execution environment
 
@@ -21,7 +21,7 @@ instructions: |-
 
   {% if relevance %}## Document summaries
 
-  A short, per-document summary of what each document contributes toward the task, headed by the ID of the document it describes (**Document ID: <ID>**). This is a co-equal view, not just background: it often carries context the parse compresses away, and sometimes the very fact the task needs. Read it together with the parse.
+  A short, per-document summary of what each document contributes toward {% if built_for %}the earlier question{% else %}the task{% endif %}, headed by the ID of the document it describes (**Document ID: <ID>**). This is a co-equal view, not just background: it often carries context the parse compresses away, and sometimes the very fact the task needs. Read it together with the parse.
 
   {% if read_in_parts %}Some documents were too long to read whole and were read in parts, in order: a summary headed **Document ID: <ID>.1**, **<ID>.2**, … covers one part of that document, and every record from it still says `document: "<ID>"`. In `provenance_ids`, cite a part's summary by the ID that heads it, part number included, and its records by the document's ID.
 

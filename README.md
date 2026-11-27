@@ -210,7 +210,8 @@ print(other)
 This reuses the information organized during the first run and only
 repeats the final reasoning step. The follow-up is told the question the
 representation was built for, and when the representation doesn't cover the
-new question, the answer says so and advises a fresh run.
+new question, the answer says so and advises starting a new run for this
+question.
 
 #### Resume a Run
 
