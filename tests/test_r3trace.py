@@ -99,6 +99,22 @@ BARRIER_TIMEOUT_SECONDS = 10
 # document's first call to start meanwhile.
 USER_ENTERS_CODE_SECONDS = 0.2
 LOGGED_TIMEOUT_SECONDS = 5
+# What an ask of another question than finished_run's "Who?" is told.
+EARLIER_QUESTION = "<earlier_question>\nWho?\n</earlier_question>"
+FOLLOW_UP_RULE_3 = (
+    "3. **Avoid empty answers when the views cover the task.** Prefer pragmatic and "
+    'informative answers the evidence supports over "none", an empty list, or '
+    '"cannot be determined". When they don\'t, say so as above.'
+)
+RUN_RULE_3 = "3. **Avoid empty answers.**"
+NEW_RUN_ADVICE = 'your advice to the user is to "start a new run for this question".'
+FOLLOW_UP_SECTION = "## These views were built for another question"
+FOLLOW_UP_FOUND_NOTHING_RULE_3 = (
+    "3. **Don't make up an answer.** Nothing relevant to the earlier question was "
+    "found, so the current information doesn't cover this task: say so as above "
+    "rather than guess."
+)
+RUN_FOUND_NOTHING = "the documents hold nothing relevant to the task"
 ASK_FILES = {
     "manifest.json",
     "events.jsonl",
@@ -559,20 +575,101 @@ def test_an_ask_over_an_ask_asks_its_run_again_in_a_folder_of_its_own(
     assert manifest["ask_of"] == result.run_dir.name
     _, asked_first, asked_second = answering_llm.requests_for("reasoning")
     assert asked_second["messages"][0] == asked_first["messages"][0]
+    assert EARLIER_QUESTION in asked_second["messages"][0]["content"]
 
 
-def test_an_ask_sends_the_runs_reasoning_prompt_with_the_new_question(
-    answering_llm, tmp_path
+@pytest.mark.parametrize("reasoning", REASONING_PATHS)
+def test_an_ask_of_another_question_is_told_the_question_its_views_were_built_for(
+    answering_llm, tmp_path, reasoning
 ):
-    result = finished_run(answering_llm, tmp_path)
+    result = finished_run(answering_llm, tmp_path, reasoning=reasoning)
     ask(result.run_dir, "Which memo came first?", completion=answering_llm)
     ran, asked = answering_llm.requests_for("reasoning")
-    system, user = asked["messages"]
-    assert system == ran["messages"][0]
-    assert all(f"Notes on {doc}." in system["content"] for doc in DOCS)
-    assert all(f'"who": "{doc}"' in system["content"] for doc in DOCS)
-    assert user["content"] == "Input:\n<task>\nWhich memo came first?\n</task>"
-    assert asked["response_format"] == ran["response_format"]
+    system, user = (message["content"] for message in asked["messages"])
+    assert EARLIER_QUESTION in system
+    assert NEW_RUN_ADVICE in system
+    assert FOLLOW_UP_RULE_3 in system
+    assert RUN_RULE_3 not in system
+    assert all(f"Notes on {doc}." in system for doc in DOCS)
+    assert all(f'"who": "{doc}"' in system for doc in DOCS)
+    assert user == "Input:\n<task>\nWhich memo came first?\n</task>"
+    assert asked.get("response_format") == ran.get("response_format")
+
+
+@pytest.mark.parametrize("reasoning", REASONING_PATHS)
+def test_an_ask_of_the_runs_own_question_sends_the_runs_reasoning_prompt(
+    answering_llm, tmp_path, reasoning
+):
+    result = finished_run(answering_llm, tmp_path, reasoning=reasoning)
+    ask(result.run_dir, " Who?\n", completion=answering_llm)
+    ran, asked = answering_llm.requests_for("reasoning")
+    assert asked["messages"][0] == ran["messages"][0]
+    system = ran["messages"][0]["content"]
+    assert "<earlier_question>" not in system
+    assert RUN_RULE_3 in system
+
+
+def test_a_follow_up_without_a_parse_names_only_the_summaries_as_built_for_the_run(
+    answering_llm, tmp_path, sections
+):
+    answering_llm.answers(
+        relevance=silent_when(is_later_round),
+        reasoning=citing("Halloran memo", slice(1)),
+    )
+    result = finished_run(answering_llm, tmp_path)
+    ask(result.run_dir, "Which memo came first?", completion=answering_llm)
+    _, asked = answering_llm.requests_for("reasoning")
+    shown = sections(asked["messages"][0]["content"])
+    assert list(shown) == [
+        "## The task and your view",
+        FOLLOW_UP_SECTION,
+        "## Document summaries",
+        "## Rules",
+        "## Output",
+    ]
+    assert (
+        "**summaries written for the earlier question**"
+        in shown["## The task and your view"]
+    )
+    assert EARLIER_QUESTION in shown[FOLLOW_UP_SECTION]
+    assert "and the parse" not in shown[FOLLOW_UP_SECTION]
+    assert "contributes toward the earlier question" in shown["## Document summaries"]
+    assert FOLLOW_UP_RULE_3 in shown["## Rules"]
+
+
+def test_a_follow_up_over_an_empty_run_is_told_the_earlier_question_found_nothing(
+    answering_llm, tmp_path, sections
+):
+    answering_llm.answers(
+        relevance=silent_when(lambda request: True),
+        reasoning=citing("No memo says."),
+    )
+    result = finished_run(answering_llm, tmp_path)
+    ask(result.run_dir, "Which memo came first?", completion=answering_llm)
+    ran, asked = (
+        request["messages"][0]["content"]
+        for request in answering_llm.requests_for("reasoning")
+    )
+    assert RUN_FOUND_NOTHING in ran
+    assert RUN_FOUND_NOTHING not in asked
+    shown = sections(asked)
+    assert list(shown) == [
+        "## The task",
+        FOLLOW_UP_SECTION,
+        "## Document summaries",
+        "## Rules",
+        "## Output",
+    ]
+    assert (
+        "nothing relevant to the earlier question below was found"
+        in shown["## The task"]
+    )
+    assert "doesn't cover this task" in shown["## The task"]
+    assert EARLIER_QUESTION in shown[FOLLOW_UP_SECTION]
+    assert (
+        "contributes anything to the earlier question" in shown["## Document summaries"]
+    )
+    assert FOLLOW_UP_FOUND_NOTHING_RULE_3 in shown["## Rules"]
 
 
 def test_each_ask_writes_a_folder_of_its_own_and_leaves_the_runs_files_as_they_were(
@@ -730,7 +827,7 @@ def test_a_document_read_in_parts_keeps_its_part_headings_in_an_ask(
     documents = ["Halloran memo", grown_registry(40_000), "Merrow memo"]
     result = finished_run(answering_llm, tmp_path, documents, model=model)
     sent = len(answering_llm.requests)
-    ask(result, "How?", model=model, completion=answering_llm)
+    ask(result, "Who?", model=model, completion=answering_llm)
     [ran, *_] = answering_llm.requests_for("reasoning")
     asked = answering_llm.requests[sent]
     assert asked["messages"][0] == ran["messages"][0]
@@ -873,7 +970,7 @@ def test_an_ask_over_a_run_that_pruned_every_memo_reads_its_round_1_notes(
         reasoning=citing("Halloran memo", slice(1)),
     )
     result = finished_run(answering_llm, tmp_path)
-    asked = ask(result.run_dir, "Who else?", completion=answering_llm)
+    asked = ask(result.run_dir, "Who?", completion=answering_llm)
     ran, asked_request = answering_llm.requests_for("reasoning")
     assert asked_request["messages"][0] == ran["messages"][0]
     assert all(f"Notes on {doc}." in ran["messages"][0]["content"] for doc in DOCS)
@@ -889,7 +986,7 @@ def test_a_run_folder_whose_snippets_have_no_quotes_can_be_asked_and_quotes_noth
 ):
     assert quoted_run.provenance["relevant_trail"]["quotes"]
     in_json("relevance/result.json", snippets_without_quotes)(quoted_run.run_dir)
-    asked = ask(quoted_run.run_dir, "Who else?", completion=answering_llm)
+    asked = ask(quoted_run.run_dir, "Who?", completion=answering_llm)
     assert asked.answer == "Halloran memo"
     ran, asked_request = answering_llm.requests_for("reasoning")
     assert asked_request["messages"][0] == ran["messages"][0]

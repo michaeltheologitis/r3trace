@@ -386,6 +386,8 @@ class Representation:
 
     run_dir: Path
     config: RunConfig
+    task: str
+    """The run's question, which its summaries and parse were built for."""
     names: dict[str, str]
     """Each document's name by its id, in document order."""
     relevance: RelevantContext
@@ -1777,6 +1779,7 @@ def _read_built(run_dir: Path) -> Representation:
     return Representation(
         run_dir=run_dir,
         config=_run_config(manifest),
+        task=manifest["task"],
         names=names,
         relevance=relevance,
         schema_code=schema["schema_code"],
@@ -1933,6 +1936,7 @@ def ask_pipeline(
             max_turns=caps["reasoning_max_turns"],
             run=record.run,
             splits=splits,
+            built_for=None if task.strip() == built.task.strip() else built.task,
             **llm_kwargs,
         )
         relevant = _relevant_trail_over(built, result.citations)

@@ -32,8 +32,8 @@ prompts:
   relevance/later-rounds: v4
   structuring/schema: v2
   structuring/parsing: v4
-  reasoning/direct: v5
-  reasoning/coding: v4
+  reasoning/direct: v6
+  reasoning/coding: v5
   claims: v3
   linking: v1
 
