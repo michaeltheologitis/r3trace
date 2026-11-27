@@ -16,7 +16,7 @@ Ask a question across a collection of documents. R3Trace finds and organizes the
 information, reasons over it to answer your question, and lets you trace the answer back to
 the original sources to see how it got there.
 
-![R3Trace's Mac app, in real time: a folder holding a spreadsheet, three PDFs and a Word file is dropped on the panel and shows as a file tree, then a loose inspection schedule is dropped beside it; a run asks which site logged the most equipment incidents, who maintains it and when its next inspection is, and the answer lights its trail through the tree; once its sentences are linked to their evidence, hovering each sentence draws its own path in blue over the lit trail, clicking the second lists its three quotes from three documents, and a quote opens the Riverside PDF with it marked](https://raw.githubusercontent.com/michaeltheologitis/r3trace/main/docs/demo.gif)
+![R3Trace's Mac app, in real time: a folder holding a spreadsheet, three PDFs and a Word file is dropped on the panel and shows as a file tree, then a loose inspection schedule is dropped beside it; a run asks which site logged the most equipment incidents, who maintains it and when its next inspection is, and the answer lights its trail through the tree; once its sentences are linked to their evidence, hovering each sentence draws its own path in blue over the lit trail, clicking the second lists its three quotes from three documents, and a quote opens the Riverside PDF with it marked](https://raw.githubusercontent.com/michaeltheologitis/r3trace/main/docs/demo.webp)
 
 ## App
 
