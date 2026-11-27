@@ -305,6 +305,7 @@ def _system_prompt(
     parse_block: str,
     structured: bool,
     summarized: bool,
+    built_for: str | None,
 ) -> str:
     """The system prompt of ``stage`` (``reasoning/direct`` or ``reasoning/coding``) at
     ``version``, from the variables a reasoning prompt version may use, a user's overlay
@@ -318,7 +319,9 @@ def _system_prompt(
     - ``read_in_parts``: whether a summary is one part of a document read in parts;
     - ``structured``: whether the parse has a field, which it lacks when there was
       nothing to structure;
-    - ``summarized``: whether a relevance summary says anything.
+    - ``summarized``: whether a relevance summary says anything;
+    - ``built_for``: for an ask whose question is not its run's, the run's question,
+      which the summaries and parse were built for; else ``None``.
     """
     return load_prompt(
         stage,
@@ -332,6 +335,7 @@ def _system_prompt(
         read_in_parts=any(isinstance(s, list) for s in relevance_snippets or ()),
         structured=structured,
         summarized=summarized,
+        built_for=built_for,
     )
 
 
@@ -482,6 +486,7 @@ def reason(
     additional_authorized_imports: list[str] | None = None,
     run: StageRun | None = None,
     splits: Splits | None = None,
+    built_for: str | None = None,
     **llm_kwargs: Any,
 ) -> ReasoningResult:
     """Answer ``task`` over ``parsed`` and the relevant context, on ``path``, or, for a
@@ -494,7 +499,9 @@ def reason(
     (``None`` reads ``settings.REASONING_MAX_ATTEMPTS``) caps the direct request's
     sends; ``max_turns``, ``timeout_s`` and ``additional_authorized_imports`` apply to
     the coding path. ``splits`` (``None`` builds one for ``model``) says whether a
-    prompt fits the model's window.
+    prompt fits the model's window. ``built_for``, for an ask whose question is not its
+    run's (:func:`r3trace.ask`), is the run's question, which the prompt names as the
+    one ``relevance_snippets`` and ``parsed`` were built for.
 
     Raises:
         ValueError: if ``relevance_snippets`` is not one summary per document id,
@@ -541,6 +548,7 @@ def reason(
         samples_block=_sample_record_per_field(parse_dict),
         structured=bool(parse_dict),
         summarized=bool(citable["summary_ids"]),
+        built_for=built_for,
     )
     user_message = f"Input:\n<task>\n{task}\n</task>"
     with_code = functools.partial(

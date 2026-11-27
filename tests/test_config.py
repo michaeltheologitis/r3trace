@@ -27,13 +27,13 @@ DEFAULT_PROMPTS = {
     "relevance/later-rounds": "v4",
     "structuring/schema": "v2",
     "structuring/parsing": "v4",
-    "reasoning/direct": "v5",
-    CODING: "v4",
+    "reasoning/direct": "v6",
+    CODING: "v5",
     "claims": "v3",
     "linking": "v1",
 }
 DEFAULT_LABEL_PROMPTS = (
-    "prompts=(rel1=v3,rel2=v4,schema=v2,parse=v4,direct=v5,coding=v4,claims=v3,"
+    "prompts=(rel1=v3,rel2=v4,schema=v2,parse=v4,direct=v6,coding=v5,claims=v3,"
     "linking=v1)"
 )
 # Relevance prompts with a document-level form, the rest at v1.
