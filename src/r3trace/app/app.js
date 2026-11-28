@@ -2420,7 +2420,7 @@
   const MAX_TOKEN_CAP = 1_000_000;
   const CAP_LABEL = 'Token cap';
   const CAP_RULE = `a whole number from 1 to ${MAX_TOKEN_CAP.toLocaleString('en-US')}`;
-  // The first round r3trace prunes after: an empty round-1 note alone prunes nothing.
+  // The first round r3trace prunes after, unless the run has only one: an empty round-1 note alone prunes nothing.
   const FIRST_PRUNING_ROUND = 2;
   const FROM_ROUND_1 = "nothing relevant in the end · answered from round 1's notes";
   // What happened, by each reason r3trace gives for a skip (r3trace.runtime.llm.UnusableReply).
@@ -8319,7 +8319,7 @@
     const cited = run.answers.flatMap((a) => /** @type {Provenance} */ (a.provenance)).flatMap((p) => [...p.summary_ids, ...p.parse_ids]);
     const perDocument = order.length === n && order.every((d, i) => d === i) && provenance.length === n && (skipped?.length ?? n) === n;
     const after = Object.entries(r['relevance/result.json'].pruned_after ?? {});
-    const pruned = after.every(([id, round]) => Object.hasOwn(ids, id) && round >= FIRST_PRUNING_ROUND && round <= rounds.length);
+    const pruned = after.every(([id, round]) => Object.hasOwn(ids, id) && round >= Math.min(FIRST_PRUNING_ROUND, rounds.length) && round <= rounds.length);
     const claimed = run.answers.every((a) => claimsFit(/** @type {string} */ (a.text), a.claims ?? [], ids));
     return n > 0 && perDocument && named && snippets && sourced && pruned && claimed && rounds.length >= 1 && rounds.length <= MAX_ROUNDS && run.answers.length > 0 && cited.every((d) => d < n);
   }

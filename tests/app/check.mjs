@@ -7069,7 +7069,8 @@ async function liveParts(url) {
 
 // A memo whose every line fake_server.py's model skips, so its summary is empty in every round and r3trace prunes it.
 const quietMemo = () => memo('06_quiet_memo.txt', `${QUIET} The canteen's menu for the week.\n${QUIET} Nothing else to report.\n`);
-// A quiet memo says nothing from round 1, so r3trace prunes it after round 2, the first round it prunes after.
+// A quiet memo says nothing from round 1, so in a run of more rounds than one r3trace prunes it after round 2, the
+// first round it prunes after there.
 const QUIET_PRUNED_AFTER = 2;
 // fake_server.py's FADES: a memo holding it says nothing from its FADES_FROM_READ-th read on, its third, the round it
 // is read in when read whole once a round, so r3trace prunes it after that round. The server counts reads by a memo's
@@ -7160,7 +7161,8 @@ async function livePruned(url, server) {
     const flatName = "a tab as r3context 0.6.28 saved it, its pruned memos listed flat, opens, drawing every path whole as if nothing were pruned";
     check('live', flatName, opened && isDeepStrictEqual(paths(shown), Array(SAMPLE_DOCS + 2).fill(whole)), JSON.stringify(paths(shown)));
   });
-  // r3trace prunes after a round of the run from round 2 on: a tab that says otherwise is refused.
+  // In a run of more rounds than one, r3trace prunes after a round of it from round 2 on: a tab that says otherwise is
+  // refused.
   for (const round of [1, MAX_ROUNDS + 1]) {
     const tampered = withRelevance(html, (relevance) => ({ ...relevance, pruned_after: { ...relevance.pruned_after, [ids[quiet]]: round } }));
     await withPage('live', { url, sample: false }, async (page) => {
@@ -7185,6 +7187,46 @@ async function livePruned(url, server) {
     const once = [prunedLine(2, MAX_ROUNDS), prunedLine(3, MAX_ROUNDS)].every((line) => lines.filter((text) => text === line).length === 1);
     const continuedName = 'a run that failed after pruning continues with its pruned paths ending where they did, and its log says each round it pruned once';
     check('live', continuedName, failed && done && ended(nodes) && once, `${JSON.stringify(paths(nodes))}; once ${once}`);
+  });
+}
+
+// Over the sample memos and a quiet one, in a run of one round: r3trace prunes the quiet memo after round 1, its only
+// round, so that its path ends at its empty round-1 node, with no parse node, in the live run, its log, and the tab
+// saved and opened again.
+async function liveOneRoundPruned(url) {
+  const quiet = SAMPLE_DOCS;
+  const expected = [...Array(SAMPLE_DOCS).fill([...roundKinds(1), 'parsed']), roundKinds(1)];
+  const paths = (nodes) => pathsIn(nodes, SAMPLE_DOCS + 1, 1);
+  const ended = (nodes) => isDeepStrictEqual(paths(nodes), expected) && nodes.includes(`r1-${quiet} · empty`);
+  let html;
+  let ran;
+  const before = (page) => page.addInitScript(recordEvents);
+  await withPage('live', { url, sample: false, question: true, before }, async (page) => {
+    await page.setInputFiles('#file-input', [...sampleMemos(), quietMemo()]);
+    await filesCounted(page, SAMPLE_DOCS + 1);
+    await pickRounds(page, 1);
+    await page.click('#run-btn');
+    const done = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
+    const events = await page.evaluate(() => window.events);
+    const ids = events.find((e) => e.type === 'run_started')?.document_ids ?? [];
+    const pruned = events.filter((e) => e.type === 'documents_pruned').map((e) => [e.round, e.doc_ids]);
+    ran = await page.evaluate(stageNodes);
+    const name = 'in a run of one round, a memo with nothing relevant in it is pruned after round 1: its path ends at its empty round-1 node, with no parse node';
+    check('live', name, done && isDeepStrictEqual(pruned, [[1, [ids[quiet]]]]) && ended(ran), `${JSON.stringify(pruned)}; ${JSON.stringify(paths(ran))}`);
+
+    await page.focus('.log-toggle');
+    await page.keyboard.press('Enter');
+    const steps = Object.fromEntries((await page.evaluate(logOf)).steps.map(({ step, nested }) => [step, nested]));
+    const logged = { said: steps['round 1 · extracting relevance']?.at(-1), parsed: steps[`parsing ${SAMPLE_DOCS} documents`]?.length };
+    const loggedName = 'its log says it pruned one memo after round 1, not parsed, and the parsing counts only the others';
+    check('live', loggedName, isDeepStrictEqual(logged, { said: prunedLine(1, 1), parsed: SAMPLE_DOCS }), JSON.stringify(logged));
+    html = await savedHtml(page);
+  });
+  await withPage('live', { url, sample: false }, async (page) => {
+    await page.evaluate(dropItems, { on: 'panel', items: [[SAVED_NAME, html]] });
+    const opened = await becomes(page, statusMatches, LIVE_DONE.source, LIVE_RUN_MS);
+    const shown = await page.evaluate(stageNodes);
+    check('live', 'saved and opened again, it draws the nodes the live run did', opened && isDeepStrictEqual(shown, ran), `${shown.length} nodes, ${ran?.length} live`);
   });
 }
 
@@ -7638,8 +7680,8 @@ const FAINT_RUNS = [
   { docs: 120, relevant: [5, 30, 31, 110] },
 ];
 const UNFOLDED_RUN = { docs: 8, relevant: [1, 3, 4, 6] };
-// Its quiet memos parse to records, as a real model's may: only a summary, or the answer's trail, brings one out. It runs
-// FEWER_ROUNDS, one, so that r3trace prunes none of them.
+// Its quiet memos would parse to records, as a real model's may, but it runs FEWER_ROUNDS, one, after which r3trace
+// prunes them: none is parsed.
 const PARSED_RUN = { docs: 150, relevant: [25, 75, 76, 125], parsed: true };
 const LONG_TASK_MS = 200;
 
@@ -7801,13 +7843,6 @@ async function liveFolds(url, server) {
 }
 
 // Long tasks, as the page records them.
-// The folded parse nodes drawn filled when not back with records, or plain when back with them, and how many are filled.
-function misfilledParses() {
-  const parses = [...document.querySelectorAll('#world .node.parsed:is(.fold, .folder)')];
-  const filled = (el) => el.querySelector('.stack > g:last-child .ink') !== null;
-  return { wrong: parses.filter((el) => filled(el) === el.matches('.void, .failed, .working')).map((el) => el.dataset.id), filled: parses.filter(filled).length };
-}
-
 function recordLongTasks() {
   window.longTasks = [];
   new PerformanceObserver((list) => list.getEntries().forEach((entry) => window.longTasks.push(entry.duration))).observe({ type: 'longtask', buffered: true });
@@ -7832,11 +7867,11 @@ async function liveFoldsParsed(url) {
     const own = (await docIdsOf(page)).filter((id) => !id.startsWith('doc-f')).map((id) => Number(id.slice('doc-'.length)) - SAMPLE_DOCS);
     const outside = own.filter((d) => !PARSED_RUN.relevant.includes(d) && !rowNodes(d).some((id) => lit.includes(id))).map((d) => foldStem(PARSED_RUN, d));
     const folds = await count(page, '.node.fold.doc');
-    const name = `a run of ${PARSED_RUN.docs} memos whose quiet ones parse to records keeps those folded, but for the trail's, with no task over ${LONG_TASK_MS} ms`;
+    const name = `a run of ${PARSED_RUN.docs} memos whose quiet ones would parse to records keeps those folded, but for the trail's, with no task over ${LONG_TASK_MS} ms`;
     check('live', name, done && longest <= LONG_TASK_MS && folds > 0 && outside.length === 0, `longest task ${Math.round(longest)} ms; ${folds} folds; ${own.length} own rows; ${outside.length} out without a summary: ${outside.slice(0, 5).join(' ')}`);
-    const fills = await page.evaluate(misfilledParses);
-    const fillsName = "once its folds have formed and re-formed over the run, each fold's parse is filled exactly when it is back with records, none stopped";
-    check('live', fillsName, done && fills.filled > 0 && fills.wrong.length === 0, JSON.stringify(fills));
+    const parses = await page.$$eval('#world .node.parsed', (els) => els.map((el) => el.dataset.id).sort());
+    const parsesName = 'pruned after its one round, its quiet memos have no parse: only the relevant memos have a parse node, and no fold has one';
+    check('live', parsesName, done && isDeepStrictEqual(parses, PARSED_RUN.relevant.map((d) => `parsed-${d}`).sort()), JSON.stringify(parses));
   });
 }
 
@@ -10287,6 +10322,7 @@ async function live() {
     await liveQuotes(url);
     await livePartQuotes(url);
     await liveFolderPruned(url);
+    await liveOneRoundPruned(url);
     await liveDocumentLevel(url);
     await liveClaims(url);
     await liveClaimsDocumentLevel(url);

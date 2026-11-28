@@ -608,10 +608,10 @@ def run_pipeline(
       ``provenance``, and ``skipped``: ``None``, or, for a note skipped, why (as
       :attr:`Skip.reason`), its fields then empty. A part refused as too long and cut
       further is no event.
-    - ``documents_pruned``, once a round from 2 on that prunes is in: ``round``, and
-      ``doc_ids``, the documents relevance pruned after it
-      (:attr:`~r3trace.stages.relevance.RelevantContext.pruned`), in document order,
-      which get no later ``relevance_*`` event and no ``parsing_*`` one. A resume
+    - ``documents_pruned``, once a round that prunes is in (from round 2 on, or round 1
+      of a one-round run): ``round``, and ``doc_ids``, the documents relevance pruned
+      after it (:attr:`~r3trace.stages.relevance.RelevantContext.pruned`), in document
+      order, which get no later ``relevance_*`` event and no ``parsing_*`` one. A resume
       replays those its run recorded, and emits one only for a round it reads itself.
       One without ``round``, as r3context 0.6.26 to 0.6.28 wrote it, is not read: a
       resume of such a run, as of one from before pruning, prunes nothing it reuses.
@@ -711,7 +711,7 @@ class _Saved:
     relevance: RelevantContext | None = None
     snippets: dict[tuple[int, int], list[SnippetRecord]] = field(default_factory=dict)
     pruned: dict[int, int] = field(default_factory=dict)
-    recorded_through: int = 1
+    recorded_through: int = 0
     proposal: ProposalResult | None = None
     extraction: ParseResult | None = None
     parses: dict[int, Parsed] = field(default_factory=dict)
@@ -1469,8 +1469,8 @@ def _saved_snippets(
     the one before, and only when written after them. Also how many of those events or
     summaries it leaves out.
 
-    Once a round from 2 on is whole, the documents the run pruned after it are those the
-    first ``documents_pruned`` of that round written after it names, none without one
+    Once a round is whole, the documents the run pruned after it are those the first
+    ``documents_pruned`` of that round written after it names, none without one
     (:func:`_pruning_events`), and count as there in every later round, which does not
     read them."""
     read, unusable = _validated(
@@ -1497,7 +1497,7 @@ def _saved_snippets(
     pruning = _pruning_events(events, document_ids)
     pruned: dict[int, int] = {}
     pruned_at: list[int] = []
-    recorded_through = 1
+    recorded_through = 0
     for k in range(1, rounds + 1):
         this = {
             key: g

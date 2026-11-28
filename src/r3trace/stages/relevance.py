@@ -21,14 +21,14 @@ and its summary is then one note per part. Cross-corpus awareness is built over
   the whole history. The reply adds ``provenance_ids``, the ids of the shown summaries
   it used. With nothing to show, the first-round prompt is used instead.
 
-After each round from 2 on, a document whose summary in it is empty, every part's, and
-none of them skipped (below), is **pruned** (:attr:`RelevantContext.pruned`): no later
-round reads it, its summary there empty, and parsing does not parse it
-(:mod:`r3trace.stages.structuring.parsing`), the final round's included. An empty round-1
-summary alone prunes nothing, since round 2 may bring the document back once the others
-are known; with fewer than two rounds nothing is pruned. The other documents' summaries
-in the round it went empty in may still cite its summary of the round before, so the
-answer's trail can reach it through them.
+After each round from 2 on, or after round 1 when it is the only one, a document whose
+summary in it is empty, every part's, and none of them skipped (below), is **pruned**
+(:attr:`RelevantContext.pruned`): no later round reads it, its summary there empty, and
+parsing does not parse it (:mod:`r3trace.stages.structuring.parsing`), the final
+round's included. With more rounds to come, an empty round-1 summary alone prunes
+nothing, since round 2 may bring the document back once the others are known. The other
+documents' summaries in the round it went empty in may still cite its summary of the
+round before, so the answer's trail can reach it through them.
 
 A note whose reply stays unusable, still empty after its re-rolls or still unfit after
 its last send (:class:`~r3trace.runtime.llm.UnusableReply`), is **skipped**, with a
@@ -100,6 +100,7 @@ _log = get_logger("relevance")
 
 _ID_HEX_DIGITS = 6
 _REWRITE = "Write the summary of the same document again"
+_FIRST_PRUNING_ROUND = 2
 
 Snippet = str | list[str]
 """A document's relevance summary, or, for a document read in parts, one per part."""
@@ -133,7 +134,7 @@ class RelevantContext:
     the answer's trail (:mod:`r3trace.provenance`); the round of :attr:`context_round` is
     what downstream stages consume, as :attr:`snippets`. ``pruned_after`` maps each
     document the run pruned, by index, to the round after which it was pruned (the
-    module's rule), a copy of the mapping given: empty with fewer than two rounds.
+    module's rule), a copy of the mapping given: empty when no round ran.
     """
 
     records: list[list[list[SnippetRecord]]]
@@ -519,7 +520,7 @@ def surface_relevance(
     emit: Emit = no_events,
     saved: Mapping[tuple[int, int], list[SnippetRecord]] = MappingProxyType({}),
     recorded: Mapping[int, int] = MappingProxyType({}),
-    recorded_through: int = 1,
+    recorded_through: int = 0,
     **llm_kwargs: Any,
 ) -> RelevantContext:
     """Surface the relevant context over ``rounds`` synchronous rounds.
@@ -655,10 +656,13 @@ def surface_relevance(
         return result
 
     pruned: dict[int, int] = {}
-    records = [run_round([[] for _ in documents], 1, pruned.keys())]
-    for r in range(2, rounds + 1):
+    records: list[list[list[SnippetRecord]]] = []
+    for r in range(1, rounds + 1):
         # only the previous round feeds in
-        records.append(run_round(records[-1], r, pruned.keys()))
+        prev = records[-1] if records else [[] for _ in documents]
+        records.append(run_round(prev, r, pruned.keys()))
+        if r < min(_FIRST_PRUNING_ROUND, rounds):
+            continue
         if r <= recorded_through:
             pruned |= {d: k for d, k in recorded.items() if k == r}
             continue

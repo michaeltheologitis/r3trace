@@ -644,6 +644,34 @@ def test_with_one_round_a_skipped_note_leaves_its_document_no_note(llm):
     assert by_round(result, "skipped") == [[["schema error"], [None], [None]]]
 
 
+@pytest.mark.parametrize(
+    "empty", [["DOC1"], THREE], ids=["one-empty", "every-one-empty"]
+)
+def test_with_one_round_each_document_whose_note_is_empty_is_pruned_after_it(
+    llm, empty
+):
+    reply = replying_when(
+        lambda request: request["messages"][1]["content"] in empty,
+        "",
+        note_of_its_round,
+    )
+    result = surface(llm, THREE, rounds=1, reply=reply)
+    assert result.pruned_after == {THREE.index(d): 1 for d in empty}
+    assert result.snippets == ["" if d in empty else f"N({d},r1)" for d in THREE]
+    assert (result.context_round, result.all_pruned) == (1, empty == THREE)
+
+
+def test_with_one_round_a_skipped_note_prunes_nothing_and_an_empty_one_prunes(llm):
+    reply = replying_when(
+        lambda request: request["messages"][1]["content"] == "DOC1",
+        "",
+        unusable_in(1, MALFORMED),
+    )
+    result = surface(llm, THREE, rounds=1, reply=reply)
+    assert by_round(result, "skipped") == [[["schema error"], [None], [None]]]
+    assert result.pruned_after == {1: 1}
+
+
 def test_a_part_whose_reply_stays_unusable_is_skipped_and_the_others_kept(llm):
     reply = unusable_in(2, MALFORMED, reading="P10")
     documents = ["DOC0", LONG, "DOC2"]
