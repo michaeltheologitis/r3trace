@@ -848,16 +848,43 @@ def test_each_document_is_read_once_per_configured_round(answering_llm, rounds):
     assert len(answering_llm.requests_for("relevance")) == rounds * len(DOCS)
 
 
-@pytest.mark.parametrize("rounds", [0, 1])
-def test_nothing_is_pruned_with_fewer_than_two_rounds(answering_llm, tmp_path, rounds):
+def test_nothing_is_pruned_with_no_rounds(answering_llm, tmp_path):
     logger = TaskLogger("run", root=tmp_path)
-    llm = answering_llm.answers(relevance=silent_when(lambda request: True))
     events = []
-    answer(llm, logger, documents=THREE, summary_rounds=rounds, on_event=events.append)
-    parsed_memos = sorted(first_line(r) for r in llm.requests_for("parsing"))
+    answer(
+        answering_llm, logger, documents=THREE, summary_rounds=0, on_event=events.append
+    )
+    parsed_memos = sorted(first_line(r) for r in answering_llm.requests_for("parsing"))
     assert parsed_memos == sorted(THREE)
     assert "documents_pruned" not in [e["type"] for e in events]
     assert read_json(logger, "relevance/result")["pruned_after"] == {}
+
+
+def test_a_one_round_run_prunes_each_document_whose_round_1_note_is_empty(
+    answering_llm, tmp_path
+):
+    llm = answering_llm.answers(relevance=silent_when(merrow_early))
+    logger = TaskLogger("run", root=tmp_path)
+    events = []
+    result = answer(
+        llm, logger, documents=THREE, summary_rounds=1, on_event=events.append
+    )
+    merrow = result.document_ids[1]
+    parsed_memos = sorted(first_line(r) for r in llm.requests_for("parsing"))
+    assert parsed_memos == ["Calder memo", "Halloran memo"]
+    assert [row["who"] for row in result.structured_context["rows"]] == [
+        "Halloran memo",
+        "Calder memo",
+    ]
+    types = [e["type"] for e in events]
+    [pruning] = [e for e in events if e["type"] == "documents_pruned"]
+    assert (pruning["round"], pruning["doc_ids"]) == (1, [merrow])
+    at = events.index(pruning)
+    assert at > max(k for k, kind in enumerate(types) if kind == "relevance_finished")
+    assert at < types.index("schema_started")
+    assert all(e.get("doc_id") != merrow for e in events[at:])
+    assert read_json(logger, "relevance/result")["pruned_after"] == {merrow: 1}
+    assert result.relevant_context[1] == ""
 
 
 @pytest.mark.parametrize(("rounds", "empty_from"), [(2, 2), (3, 2), (4, 3), (4, 4)])
@@ -1062,14 +1089,20 @@ def test_with_every_memo_pruned_the_answer_cites_round_1s_notes_back_to_each_mem
     assert read_answer(logger.dir, DEFAULT_RULE) == result.provenance
 
 
+@pytest.mark.parametrize("rounds", [1, 2])
 def test_with_round_1_empty_too_an_all_pruned_run_answers_from_no_notes(
-    answering_llm, sections
+    answering_llm, sections, rounds
 ):
     llm = answering_llm.answers(
         relevance=silent_when(lambda request: True),
         reasoning=citing("No memo says.", summaries=slice(None)),
     )
-    result = answer(llm, documents=THREE)
+    events = []
+    result = answer(llm, documents=THREE, summary_rounds=rounds, on_event=events.append)
+    pruning = [
+        (e["round"], e["doc_ids"]) for e in events if e["type"] == "documents_pruned"
+    ]
+    assert pruning == [(rounds, result.document_ids)]
     assert llm.requests_for("schema") == llm.requests_for("parsing") == []
     [prompt] = system_prompts(llm, "reasoning")
     shown = sections(prompt)

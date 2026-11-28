@@ -2174,6 +2174,12 @@ RESENT_IN_RELEVANCE = [
     *[("parsing", line) for line in UNPRUNED],
     ("reasoning", None),
 ]
+RESENT_IN_ROUND_1 = [
+    *[("relevance", line) for line in LAST_THREE],
+    ("schema", None),
+    *[("parsing", line) for line in UNPRUNED],
+    ("reasoning", None),
+]
 
 
 def as_left_by_0_6_25(run_dir: Path, events: list[dict]) -> None:
@@ -2232,8 +2238,28 @@ def flat_pruned(result: dict) -> None:
             lambda: reading_in_round("Calder memo", 4),
             RESENT_IN_RELEVANCE,
         ),
+        (
+            1,
+            lambda: reading("Dunmore memo"),
+            "parsing",
+            lambda: reading("Calder memo"),
+            RESENT_IN_PARSING,
+        ),
+        (
+            1,
+            lambda: reading("Dunmore memo"),
+            "relevance",
+            lambda: reading("Calder memo"),
+            RESENT_IN_ROUND_1,
+        ),
     ],
-    ids=["in-parsing", "in-round-4-pruned-after-2", "in-round-4-pruned-after-3"],
+    ids=[
+        "in-parsing",
+        "in-round-4-pruned-after-2",
+        "in-round-4-pruned-after-3",
+        "one-round-in-parsing",
+        "one-round-in-round-1",
+    ],
 )
 def test_a_resume_prunes_what_the_run_pruned_and_never_reads_or_parses_it(
     answering_llm, one_worker, tmp_path, rounds, dunmore_late, stage, when, resent
@@ -2314,6 +2340,38 @@ def test_a_resume_replays_each_rounds_pruning_once_before_the_round_after_it(
         )
     written = [e["type"] for e in events_in(run_dir)]
     assert written.count("documents_pruned") == 2
+
+
+def test_a_one_round_run_killed_once_its_pruning_is_in_resumes_pruning_the_same(
+    answering_llm, one_worker, events_in, tmp_path
+):
+    llm = answering_llm.answers(
+        relevance=silent_when(reading("Dunmore memo")),
+        schema=failing_once(lambda request: True, ANSWERING["schema"]),
+    )
+    run_dir = failed_run(llm, tmp_path, summary_rounds=1)
+    # Killed once relevance reported its pruning, before it wrote its files.
+    for name in ("result.json", "calls.json"):
+        (run_dir / "relevance" / name).unlink()
+    shutil.rmtree(run_dir / "structuring")
+    events = events_in(run_dir)
+    kept = events[: line_of(events, "documents_pruned", round=1) + 1]
+    rewritten(run_dir, [json.dumps(event) for event in kept])
+    seen = []
+    answer, requests = resumed(llm, run_dir, on_event=seen.append)
+    assert requests == [
+        ("schema", None),
+        *[("parsing", line) for line in UNPRUNED],
+        ("reasoning", None),
+    ]
+    assert answer.answer == "; ".join(UNPRUNED)
+    pruning = [
+        (e["round"], e["doc_ids"]) for e in seen if e["type"] == "documents_pruned"
+    ]
+    assert pruning == [(1, [answer.document_ids[3]])]
+    assert [e["type"] for e in events_in(run_dir)].count("documents_pruned") == 1
+    [resumed_event] = [e for e in seen if e["type"] == "run_resumed"]
+    assert resumed_event["reused"] == {"relevance": [5], "schema": 0, "parsing": 1}
 
 
 def test_a_finished_relevances_pruning_is_replayed_from_its_result_round_by_round(
