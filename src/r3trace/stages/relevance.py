@@ -576,7 +576,7 @@ def surface_relevance(
     attempts = _attempts(max_attempts)
     # rounds < 1 = "no relevance summaries at all" (a deliberate rounds=0 re-run); an
     # empty document corpus is likewise empty. Both short-circuit BEFORE round 1 runs
-    # (the unconditional first run_round below) — a `return`, not a fall-through.
+    # (the loop's first run_round below) — a `return`, not a fall-through.
     if rounds < 1 or not documents:
         return RelevantContext(records=[])
 

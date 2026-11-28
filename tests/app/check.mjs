@@ -7230,15 +7230,28 @@ async function liveOneRoundPruned(url) {
   });
 }
 
-// The sample memos, a quiet one and a fading one in a folder closed before the run, over MAX_ROUNDS rounds: once done,
-// each round's node and the parse node count the folder's memos still read there.
+// In-page: the stacked parse nodes drawn filled when not back with records, or plain when back with them, and how many
+// are drawn each way.
+function misfilledParses() {
+  const parses = [...document.querySelectorAll('#world .node.parsed:is(.fold, .folder)')];
+  const filled = (el) => el.querySelector('.stack > g:last-child .ink') !== null;
+  const wrong = parses.filter((el) => filled(el) === el.matches('.void, .failed, .working')).map((el) => el.dataset.id);
+  return { wrong, filled: parses.filter(filled).length, plain: parses.filter((el) => !filled(el)).length };
+}
+
+// The sample memos, a quiet one and a fading one in a folder closed before the run, beside a closed folder of memos
+// that say something relevant but parse to nothing, over MAX_ROUNDS rounds: once done, each round's node and the parse
+// node count the first folder's memos still read there, and each folder's parse is filled exactly when it is back with
+// records.
 async function liveFolderPruned(url) {
   const memos = [...sampleMemos(), quietMemo(), fadingMemo('07_fading_memo.txt', 'in a closed folder')];
   const folder = ['pruned', memos.map(({ name, buffer }) => [name, buffer.toString()])];
+  const unparsed = ['unparsed', ['north', 'south'].map((site) => [`${site}_memo.txt`, `The ${site} site filed its incident log. ${UNPARSED}\n`])];
   await withPage('live', { url, sample: false }, async (page) => {
-    await page.evaluate(dropItems, { on: 'panel', items: [folder] });
-    await filesCounted(page, memos.length);
+    await page.evaluate(dropItems, { on: 'panel', items: [folder, unparsed] });
+    await filesCounted(page, memos.length + unparsed[1].length);
     await pressNode(page, folderSel('pruned'));
+    await pressNode(page, folderSel('unparsed'));
     await pickRounds(page, MAX_ROUNDS);
     await page.click('#tab-chat');
     await send(page, 'Which site logged the most incidents?');
@@ -7248,6 +7261,9 @@ async function liveFolderPruned(url) {
     const expected = { r1: [`${files} summaries`, 'round 1'], r2: [`${files} summaries`, 'round 2'], r3: [`${files - 1} summaries`, 'round 3'], r4: [`${files - 2} summaries`, 'round 4'], parsed: [`${files - 2} structures`] };
     const name = "a closed folder's round and parse nodes end at its files less those r3trace pruned before them: all in rounds 1 and 2, one fewer in round 3, two fewer in round 4 and the parse";
     check('live', name, done && isDeepStrictEqual(counts, expected), JSON.stringify(counts));
+    const fills = await page.evaluate(misfilledParses);
+    const fillsName = "each closed folder's parse is filled exactly when it is back with records, none stopped: the sample memos' folder's is, and that of memos that parse to nothing is not";
+    check('live', fillsName, done && isDeepStrictEqual(fills, { wrong: [], filled: 1, plain: 1 }), JSON.stringify(fills));
   });
 }
 
@@ -7661,9 +7677,8 @@ async function skipsArea() {
 const UNPARSED = '(nothing to parse here)';
 // Enough quiet paragraphs that fake_server.py refuses the memo whole, past PART_CHARS, so r3trace reads it in parts.
 const QUIET_PARAGRAPHS = 40;
-// A folded run's memos: those in `relevant` say something relevant; the others say nothing, and parse to nothing
-// unless `parsed`. The memo `inParts` is read in parts, none relevant, and `relevantInParts` in parts, its second
-// relevant.
+// A folded run's memos: those in `relevant` say something relevant; the others say nothing, and parse to nothing. The
+// memo `inParts` is read in parts, none relevant, and `relevantInParts` in parts, its second relevant.
 const FOLD_RUN = { docs: 60, relevant: [5, 30, 31, 50], inParts: 40, relevantInParts: 50 };
 // Its folds once read, first memo to last: the runs of memos between the relevant ones.
 const FOLD_RUN_FOLDS = [
@@ -7680,13 +7695,12 @@ const FAINT_RUNS = [
   { docs: 120, relevant: [5, 30, 31, 110] },
 ];
 const UNFOLDED_RUN = { docs: 8, relevant: [1, 3, 4, 6] };
-// Its quiet memos would parse to records, as a real model's may, but it runs FEWER_ROUNDS, one, after which r3trace
-// prunes them: none is parsed.
-const PARSED_RUN = { docs: 150, relevant: [25, 75, 76, 125], parsed: true };
+// It runs FEWER_ROUNDS, one, after which r3trace prunes its quiet memos: they fold with no parse node.
+const ONE_ROUND_RUN = { docs: 150, relevant: [25, 75, 76, 125] };
 const LONG_TASK_MS = 200;
 
-function foldMemos({ docs, relevant, inParts = -1, relevantInParts = -1, parsed = false }) {
-  const quiet = (i) => `${QUIET} ${parsed ? '' : UNPARSED} A routine memo, number ${i}.\n`;
+function foldMemos({ docs, relevant, inParts = -1, relevantInParts = -1 }) {
+  const quiet = (i) => `${QUIET} ${UNPARSED} A routine memo, number ${i}.\n`;
   const paragraphs = Array.from({ length: QUIET_PARAGRAPHS }, (_, k) => `${QUIET} ${UNPARSED} Filler paragraph ${k + 1}, which the scripted model skips.`);
   const text = (i) => {
     if (i === inParts) return paragraphs.join('\n\n');
@@ -7848,11 +7862,13 @@ function recordLongTasks() {
   new PerformanceObserver((list) => list.getEntries().forEach((entry) => window.longTasks.push(entry.duration))).observe({ type: 'longtask', buffered: true });
 }
 
-async function liveFoldsParsed(url) {
+// A run of many memos over one round: r3trace prunes the quiet ones after it, so they stay folded with no parse node,
+// and only the relevant memos have parse nodes, the page never busy for long.
+async function liveFoldsOneRound(url) {
   const before = (page) => page.addInitScript(recordLongTasks);
   await withPage('live', { url, sample: false, before }, async (page) => {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    const memos = foldMemos(PARSED_RUN);
+    const memos = foldMemos(ONE_ROUND_RUN);
     await page.setInputFiles('#file-input', memos);
     await filesCounted(page, memos.length);
     await pickRounds(page, FEWER_ROUNDS);
@@ -7865,13 +7881,13 @@ async function liveFoldsParsed(url) {
     const lit = await litNodes(page);
     const rowNodes = (d) => [fileNode(d), ...roundKinds(FEWER_ROUNDS).map((kind) => `${kind}-${d}`), `parsed-${d}`];
     const own = (await docIdsOf(page)).filter((id) => !id.startsWith('doc-f')).map((id) => Number(id.slice('doc-'.length)) - SAMPLE_DOCS);
-    const outside = own.filter((d) => !PARSED_RUN.relevant.includes(d) && !rowNodes(d).some((id) => lit.includes(id))).map((d) => foldStem(PARSED_RUN, d));
+    const outside = own.filter((d) => !ONE_ROUND_RUN.relevant.includes(d) && !rowNodes(d).some((id) => lit.includes(id))).map((d) => foldStem(ONE_ROUND_RUN, d));
     const folds = await count(page, '.node.fold.doc');
-    const name = `a run of ${PARSED_RUN.docs} memos whose quiet ones would parse to records keeps those folded, but for the trail's, with no task over ${LONG_TASK_MS} ms`;
+    const name = `a one-round run of ${ONE_ROUND_RUN.docs} memos keeps its quiet ones folded, but for the trail's, with no task over ${LONG_TASK_MS} ms`;
     check('live', name, done && longest <= LONG_TASK_MS && folds > 0 && outside.length === 0, `longest task ${Math.round(longest)} ms; ${folds} folds; ${own.length} own rows; ${outside.length} out without a summary: ${outside.slice(0, 5).join(' ')}`);
     const parses = await page.$$eval('#world .node.parsed', (els) => els.map((el) => el.dataset.id).sort());
-    const parsesName = 'pruned after its one round, its quiet memos have no parse: only the relevant memos have a parse node, and no fold has one';
-    check('live', parsesName, done && isDeepStrictEqual(parses, PARSED_RUN.relevant.map((d) => `parsed-${d}`).sort()), JSON.stringify(parses));
+    const parsesName = 'pruned after its one round, its quiet memos are folded with no parse node: only the relevant memos have parse nodes';
+    check('live', parsesName, done && isDeepStrictEqual(parses, ONE_ROUND_RUN.relevant.map((d) => `parsed-${d}`).sort()), JSON.stringify(parses));
   });
 }
 
@@ -10318,7 +10334,7 @@ async function live() {
     await liveParts(url);
     await liveSkippedParts(url);
     await liveSkipInFolder(url);
-    await liveFoldsParsed(url);
+    await liveFoldsOneRound(url);
     await liveQuotes(url);
     await livePartQuotes(url);
     await liveFolderPruned(url);

@@ -2420,7 +2420,8 @@
   const MAX_TOKEN_CAP = 1_000_000;
   const CAP_LABEL = 'Token cap';
   const CAP_RULE = `a whole number from 1 to ${MAX_TOKEN_CAP.toLocaleString('en-US')}`;
-  // The first round r3trace prunes after, unless the run has only one: an empty round-1 note alone prunes nothing.
+  // The first round r3trace prunes after, unless the run has only one: in a run of more than one round, an empty
+  // round-1 note alone prunes nothing.
   const FIRST_PRUNING_ROUND = 2;
   const FROM_ROUND_1 = "nothing relevant in the end · answered from round 1's notes";
   // What happened, by each reason r3trace gives for a skip (r3trace.runtime.llm.UnusableReply).
